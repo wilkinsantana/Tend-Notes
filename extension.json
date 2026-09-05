@@ -4,5 +4,5 @@
   "description": "A quiet space for your thoughts. Write, organize, and keep your notes in Markdown.",
   "icon": "icon.svg",
   "ui": {"module": "index.js", "mount": "shell-app", "size": {"w": 1080, "h": 720}, "minSize": {"w": 360, "h": 420}},
-  "permissions": ["documents.read", "documents.write"]
+  "permissions": ["documents.read", "documents.write", "documents.backup"]
 }

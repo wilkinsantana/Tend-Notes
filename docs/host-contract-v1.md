@@ -1,7 +1,7 @@
 # Tend document capability v1
 
-The official package ID is `host.tend.notes`. It declares `documents.read` and
-`documents.write` and exports `activate(host)` → `mount(container)` → cleanup.
+The official package ID is `host.tend.notes`. It declares `documents.read`,
+`documents.write`, and `documents.backup` and exports `activate(host)` → `mount(container)` → cleanup.
 `host.documents.version` must be `1`; older hosts receive an update message.
 The source contract is typed in `src/host.ts`.
 
@@ -43,3 +43,40 @@ Visible Notes instances refresh about every three seconds. A remote revision
 may replace only a clean, non-saving editor that still has the same local
 session/revision as when the read started. Dirty drafts are never overwritten.
 This is online session refresh, not offline mobile sync.
+
+### Portable organization
+
+A leading `<!-- tend-notes {"v":1,"tags":[],"color":"none","pinned":false} -->`
+line stores organization in the canonical Markdown file. The UTF-8 header is at
+most 4,096 bytes; tags are normalized Unicode letters/numbers and `._/-`, up to
+32 characters each and 12 unique tags. Colors are `none`, `sage`, `sky`,
+`lavender`, `rose`, and `amber`. Invalid/future headers remain ordinary body text;
+unknown v1 keys survive organization edits. Body editing preserves the header.
+
+The host's disposable owner-joined projection exposes tags/color/pinned in note
+summaries. `list(libraryId, query, offset, filters)` supports `tag`, `color`,
+`pinned`, and `sort` (`recent` or `title`). Its `facets` describe the complete
+active notebook, independent of pagination and current filters. Pins sort first.
+Files deletion, source relocation, and rescan invalidate derived metadata.
+
+### ZIP exports and connected-drive backups
+
+`host.documents.backups` exposes `state`, `destinations`, `configure`, `start`,
+`cancel`, and an authenticated `downloadUrl`. All operations require document
+read access; destination discovery/configuration and storage jobs additionally
+require `documents.backup`. Job execution rechecks these permissions and current
+owner scope, including after transfer and before marking success.
+
+The host owns disk-backed ZIP creation and one active job per owner. Jobs refuse
+partial downloads, cap resource use, store archives with owner-only permissions,
+and retain local download files for 24 hours. Canonical files are never moved or
+deleted. Schedules persist outside extension install storage and remain inactive
+without the reviewed enabled extension. Restarted jobs fail visibly rather than
+claiming success; schedule claims prevent catch-up bursts.
+
+Connected destinations are opaque, owner-authorized Files source IDs. Local
+folders reuse Files' confined upload, while cloud providers use the existing
+server-side direct rclone endpoint/config and verify a complete readback hash.
+Fresh per-job snapshot paths preserve prior backups. Cancellation interrupts the
+job, but data already sent to remote storage may remain. Remote snapshots are
+never automatically removed. The feature does not promise two-way cloud sync.

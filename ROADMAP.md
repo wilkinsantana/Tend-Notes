@@ -38,3 +38,15 @@ no hidden third-party upload service.
 User research input: [productivity community discussion](https://www.reddit.com/r/productivity/comments/1cpmdme/which_note_taking_app_you_use_and_why_what_you/).
 Treat those anecdotes as product input; validate capture latency, findability,
 and sync reliability in real workflows rather than assuming universal needs.
+
+## Initial organization and ownership delivery
+
+- Complete: portable tags, pins and note colors, theme-aware menus, full-library
+  filters and sort controls.
+- Complete: notebook/all-notebook Markdown ZIP export with owner scope, bounded
+  jobs, visible errors, and preservation of portable organization.
+- Complete: connected-storage snapshots and opt-in hourly/daily/weekly backup
+  scheduling through Tend Files connections; local byte verification and cloud
+  readback verification gates.
+- Still planned: offline mobile sync and conflict resolution, two-way cloud
+  editing, rich media capture, backlinks, and handwriting/OCR search.

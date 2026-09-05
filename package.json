@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5186",
     "check": "svelte-check --tsconfig tsconfig.json --threshold error",
-    "test": "bun test tests/session.test.ts",
+    "test": "bun test tests/session.test.ts tests/organization.test.ts",
     "build": "vite build && python3 scripts/package.py",
     "test:browser": "playwright test"
   },

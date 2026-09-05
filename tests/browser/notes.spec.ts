@@ -148,3 +148,50 @@ test('dialogs remain usable with host modal styles and deletion requires the nam
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('button',{name:/Delete me.*Markdown/})).toHaveCount(0);
 });
+
+test('tags, pins and theme-aware colors organize notes without exposing metadata in the editor', async ({page}) => {
+  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});const original=await editor.inputValue();
+  await page.getByRole('button',{name:'Pin note',exact:true}).click();
+  await page.getByRole('button',{name:'Organize note'}).click();
+  await page.getByRole('textbox',{name:'Add tag',exact:true}).fill('Work/Ideas');
+  await page.getByRole('button',{name:'Add',exact:true}).click();
+  await page.getByRole('button',{name:'sage note color',exact:true}).click();
+  await expect(editor).toHaveValue(original);
+  await expect(page.getByRole('button',{name:'All changes saved'})).toBeVisible();
+  await page.getByRole('button',{name:'Refresh notes',exact:true}).click();
+  await page.getByRole('button',{name:/Pinned 1/}).click();
+  await expect(page.locator('.note-list .note')).toHaveCount(1);
+  await page.getByRole('button',{name:'#work/ideas1',exact:true}).click();
+  await page.getByRole('combobox',{name:'Filter note color'}).selectOption('sky');
+  await expect(page.locator('.note-list .note')).toHaveCount(0);
+  await page.getByRole('combobox',{name:'Filter note color'}).selectOption('sage');
+  await expect(page.locator('.note-list .note')).toHaveCount(1);
+  await page.reload();await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await expect(page.getByRole('button',{name:'Unpin note',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(editor).toHaveValue(original);
+  await page.getByRole('button',{name:'Preview light theme'}).click();
+  await expect(page.locator('#notes-library option').first()).toHaveCSS('background-color','rgb(241, 244, 239)');
+  await expect(page.locator('#notes-library option').first()).toHaveCSS('color','rgb(38, 62, 56)');
+});
+
+test('backup dialog offers ZIPs, connected storage, scheduling and download status on narrow screens', async ({page}) => {
+  await page.setViewportSize({width:390,height:844});await page.goto('/');
+  await page.evaluate(()=>Object.assign((window as any).notesDemo,{backupFixture:true}));
+  await page.getByRole('button',{name:'Export & backups',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Export and backups'});
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Backup folder',{exact:true}).selectOption('sample-drive');
+  await dialog.getByLabel('Automatic backups',{exact:true}).selectOption('1440');
+  await dialog.getByRole('button',{name:'Save schedule',exact:true}).click();
+  await expect(dialog.getByText('Automatic backups enabled.')).toBeVisible();
+  await dialog.getByRole('button',{name:'Prepare ZIP',exact:true}).click();
+  await expect(dialog.getByRole('link',{name:'Download ZIP',exact:true})).toBeVisible();
+  await dialog.getByRole('button',{name:'Back up now',exact:true}).click();
+  await expect(dialog.getByText('Verified in storage',{exact:true})).toBeVisible();
+  await dialog.getByLabel('Automatic backups',{exact:true}).selectOption('0');
+  await dialog.getByRole('button',{name:'Save schedule',exact:true}).click();
+  await expect(dialog.getByText('Automatic backups paused.')).toBeVisible();
+  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  await page.keyboard.press('Escape');await expect(dialog).toBeHidden();
+});

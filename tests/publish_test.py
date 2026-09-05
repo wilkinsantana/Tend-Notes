@@ -28,4 +28,18 @@ class PublicationTests(unittest.TestCase):
         with patch.object(publish,'api',side_effect=[{'object':{'type':'tag','sha':'tag-object'}},{'object':{'type':'commit','sha':'verified'}}]):
             self.assertEqual(publish.tag_target('v0.1.0'),'verified')
 
+    def test_empty_repository_is_not_an_existing_tag(self):
+        import io
+        from urllib.error import HTTPError
+        error=HTTPError('https://api.github.com/',409,'Conflict',{},io.BytesIO(b'{"message":"Git Repository is empty."}'))
+        with patch.object(publish,'api',side_effect=error):
+            self.assertIsNone(publish.tag_target('v0.1.0'))
+
+    def test_unrelated_conflict_is_not_silently_ignored(self):
+        import io
+        from urllib.error import HTTPError
+        error=HTTPError('https://api.github.com/',409,'Conflict',{},io.BytesIO(b'{"message":"another conflict"}'))
+        with patch.object(publish,'api',side_effect=error):
+            with self.assertRaises(HTTPError):publish.tag_target('v0.1.0')
+
 if __name__=='__main__':unittest.main()

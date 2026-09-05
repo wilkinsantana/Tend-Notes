@@ -1,8 +1,10 @@
 /** Development-only host. This entry is excluded from the extension package. */
 import { activate } from './index';
-import type { Document, Host } from './host';
+import { unpack } from './organization';
+import type { Document, Host, BackupState } from './host';
 const key = 'tend-notes:demo-documents';
-const state = { readDelay: 0, saveDelay: 0, saveFails: false };
+const state = { readDelay: 0, saveDelay: 0, saveFails: false, backupFixture: false };
+let demoBackups: BackupState = {schedule:{destination_source_id:'',interval_minutes:0,next_run_at:null},jobs:[]};
 Object.assign(window, { notesDemo: state });
 const revision = async (content: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const get = (): Document[] => JSON.parse(localStorage.getItem(key) ?? '[]');
@@ -12,9 +14,23 @@ if (!localStorage.getItem(key)) {
   put([{id:'welcome',libraryId:'personal',name:'Small things worth keeping.md',modifiedAt:Math.floor(Date.now()/1000),size:content.length,content,revision:await revision(content)}]);
 }
 const host: Host = { id:'host.tend.notes',user:{id:'demo-user',name:'You',role:'user'},onUnmount(){},documents:{version:1,
+  backups: {
+    async state(){return structuredClone(demoBackups);},
+    async destinations(){return state.backupFixture ? [{id:'sample-drive',name:'Sample backup folder',provider:'local'}] : [];},
+    async configure(input){if(!state.backupFixture)throw new Error('Automatic backups connect to your storage when Notes runs inside Tend.');demoBackups.schedule={destination_source_id:input.destinationSourceId,interval_minutes:input.intervalMinutes,next_run_at:input.intervalMinutes?Math.floor(Date.now()/1000)+input.intervalMinutes*60:null};return structuredClone(demoBackups);},
+    async start(input){if(!state.backupFixture)throw new Error('ZIP exports use your Tend panel. This development preview contains sample notes only.');const now=Math.floor(Date.now()/1000);const job={id:crypto.randomUUID(),library_id:input.libraryId??null,destination_source_id:input.destinationSourceId??null,status:'completed',total:1,completed:1,error:null,filename:'sample.zip',sha256:'fixture',bytes:22,created_at:now,completed_at:now,cancel_requested:0,downloadAvailable:true};demoBackups.jobs.unshift(job);return job;},
+    async cancel(id){const job=demoBackups.jobs.find(j=>j.id===id);if(!job)throw new Error('Export not found');return job;},
+    downloadUrl(){return 'data:application/zip;base64,UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==';},
+  },
   async libraries(){return new URLSearchParams(location.search).has('empty') ? [] : [{id:'personal',name:'Personal notes',canCreate:!new URLSearchParams(location.search).has('unconnected')},{id:'work',name:'Work notes',canCreate:!new URLSearchParams(location.search).has('unconnected')}];},
   async index(){return {indexed:0,skipped:0,more:false};},
-  async list(libraryId,query='',offset=0){const all=get().filter(d=>d.libraryId===libraryId&&(d.name+' '+d.content).toLowerCase().includes(query.toLowerCase())).sort((a,b)=>(b.modifiedAt??0)-(a.modifiedAt??0));return {items:all.slice(offset,offset+100),total:all.length,nextOffset:all.length>offset+100?offset+100:null};},
+  async list(libraryId,query='',offset=0,filters={}){
+    const library=get().filter(d=>d.libraryId===libraryId).map(d=>({...d,...unpack(d.content).organization}));
+    const counts=new Map<string,number>();for(const note of library)for(const tag of note.tags)counts.set(tag,(counts.get(tag)??0)+1);
+    const all=library.filter(d=>(d.name+' '+unpack(d.content).body+' '+d.tags.join(' ')).toLowerCase().includes(query.toLowerCase())&&(!filters.tag||d.tags.includes(filters.tag))&&(!filters.color||d.color===filters.color)&&(!filters.pinned||d.pinned))
+      .sort((a,b)=>Number(b.pinned)-Number(a.pinned)||(filters.sort==='title'?a.name.localeCompare(b.name):(b.modifiedAt??0)-(a.modifiedAt??0)));
+    return {items:all.slice(offset,offset+100),total:all.length,nextOffset:all.length>offset+100?offset+100:null,facets:{total:library.length,pinned:library.filter(d=>d.pinned).length,tags:[...counts].map(([name,count])=>({name,count}))}};
+  },
   async read(id){if(state.readDelay) await new Promise(r=>setTimeout(r,state.readDelay));const d=get().find(d=>d.id===id);if(!d) throw Object.assign(new Error('Note not found'),{status:404});return d;},
   async create(input){const all=get();const exists=all.find(d=>d.libraryId===input.libraryId&&d.name===input.name);if(exists){if(exists.content===input.content)return exists;throw Object.assign(new Error('A note with this name already exists.'),{status:409});}const d={...input,id:crypto.randomUUID(),revision:await revision(input.content),size:input.content.length,modifiedAt:Math.floor(Date.now()/1000)};put([...all,d]);return d;},
   async save(id,input){if(state.saveDelay)await new Promise(r=>setTimeout(r,state.saveDelay));if(state.saveFails) throw new Error('Demo connection interrupted');const all=get(),at=all.findIndex(d=>d.id===id);if(at<0)throw new Error('Note not found');if(all[at].revision!==input.revision&&all[at].content!==input.content)throw Object.assign(new Error('This note changed elsewhere. Keep your draft or reload the saved version.'),{status:409});all[at]={...all[at],content:input.content,revision:await revision(input.content),modifiedAt:Math.floor(Date.now()/1000),size:input.content.length};put(all);return all[at];},

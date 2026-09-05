@@ -33,7 +33,7 @@ jobs:
       - name: Type and Svelte checks
         run: bun run check
       - name: Save and recovery regressions
-        run: bun test tests/session.test.ts
+        run: bun run test
       - name: Immutable publication regressions
         run: python3 -m unittest discover -s tests -p "*_test.py"
       - name: Audit production dependencies

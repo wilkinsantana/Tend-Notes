@@ -25,6 +25,7 @@ def tag_target(tag):
         target=api('/git/ref/tags/'+tag)['object']
     except urllib.error.HTTPError as error:
         if error.code == 404: return None
+        if error.code == 409 and json.loads(error.read()).get('message') == 'Git Repository is empty.': return None
         raise
     for _ in range(5):
         if target['type'] == 'commit': return target['sha']
