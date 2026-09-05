@@ -32,7 +32,8 @@ test('narrow panel and onboarding handoff', async ({page}) => {
   await page.getByRole('button',{name:'Back to notes'}).click();
   await expect(page.locator('aside')).toBeVisible();
   await page.setViewportSize({width:1100,height:800}); await page.goto('/?empty');
-  await expect(page.getByRole('link',{name:'Open Files'})).toHaveAttribute('href','#/shell/files');
+  await expect(page.getByRole('button',{name:'Set up your notebook'})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Open Files'})).toHaveCount(0);
 });
 
 test('a failed save cannot switch away from an editable draft', async ({page}) => {
@@ -105,8 +106,7 @@ test('an unsaved browser recovery copy survives a reload', async ({page}) => {
 
 test('narrow existing notebook exposes setup and recovery entries', async ({page}) => {
   await page.setViewportSize({width:390,height:780}); await page.goto('/?unconnected');
-  await expect(page.getByRole('link',{name:'Connect a notebook folder in Files'})).toBeVisible();
-  await expect(page.getByRole('link',{name:'Connect a notebook folder in Files'})).toHaveAttribute('href','#/shell/files');
+  await expect(page.getByRole('button',{name:'Set up notebook',exact:true})).toBeVisible();
   await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
   await page.evaluate(()=>{(window as any).notesDemo.saveFails=true;});
   await page.getByRole('textbox',{name:'Note Markdown'}).fill('Narrow recovery');
@@ -194,4 +194,29 @@ test('backup dialog offers ZIPs, connected storage, scheduling and download stat
   await expect(dialog.getByText('Automatic backups paused.')).toBeVisible();
   expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
   await page.keyboard.press('Escape');await expect(dialog).toBeHidden();
+});
+
+
+test('notebook and backup destination setup stay inside Notes and preserve cancellation', async ({page}) => {
+  await page.setViewportSize({width:390,height:780}); await page.goto('/?empty');
+  await page.getByRole('button',{name:'Set up your notebook'}).click();
+  const setup=page.getByRole('dialog',{name:'Set up your notebook'});
+  await setup.getByLabel('Notebook name').fill('Travel ideas');
+  await setup.getByRole('button',{name:'Use sample notebook'}).click();
+  await expect(page.getByRole('button',{name:'New note',exact:true})).toBeEnabled();
+  await page.getByRole('button',{name:'Export & backups',exact:true}).click();
+  const backups=page.getByRole('dialog',{name:'Export and backups'});
+  await backups.getByRole('button',{name:'Add backup destination'}).click();
+  const destination=page.getByRole('dialog',{name:'Set up a backup destination'});
+  await destination.getByLabel('Destination name').fill('My cloud copy');
+  await destination.getByLabel('Storage drive').selectOption('gdrive');
+  await destination.getByRole('button',{name:'Use sample destination'}).click();
+  await expect(backups.getByLabel('Backup folder')).toHaveValue(/.+/);
+  await expect(backups.getByRole('option',{name:'My cloud copy'})).toHaveCount(1);
+  await expect(backups.getByLabel('Automatic backups',{exact:true})).toHaveValue('0');
+  const selected=await backups.getByLabel('Backup folder').inputValue();
+  await backups.getByRole('button',{name:'Add backup destination'}).click();
+  await destination.getByRole('button',{name:'Cancel',exact:true}).click();
+  await expect(backups.getByLabel('Backup folder')).toHaveValue(selected);
+  await expect(page).toHaveURL(/\/\?empty$/);
 });

@@ -80,3 +80,18 @@ server-side direct rclone endpoint/config and verify a complete readback hash.
 Fresh per-job snapshot paths preserve prior backups. Cancellation interrupts the
 job, but data already sent to remote storage may remain. Remote snapshots are
 never automatically removed. The feature does not promise two-way cloud sync.
+
+### Native storage setup
+
+Optional `documents.setupLibrary()` and `backups.setupDestination()` open
+host-owned dialogs inside the extension panel and return an opaque library or
+destination summary, or `null` when cancelled. The underlying editor is inert
+while setup is open. Notebook setup requires read/write permissions; backup
+setup requires read/backup. Each host operation rechecks access, including
+nested provider discovery, folder creation, connection setup, and scanning.
+
+The host reuses its storage forms and encrypted connections. Setup records its
+Files library and source together, resumes an empty notebook, and treats an
+identical retry as the same location. Conflicting existing folders are preserved.
+Neither setup method starts a backup or changes the schedule. Older hosts show
+an update message instead of redirecting users into a different settings panel.

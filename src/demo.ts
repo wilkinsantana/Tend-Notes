@@ -1,8 +1,11 @@
 /** Development-only host. This entry is excluded from the extension package. */
 import { activate } from './index';
+import { demoStorageSetup } from './demoSetup';
 import { unpack } from './organization';
 import type { Document, Host, BackupState } from './host';
 const key = 'tend-notes:demo-documents';
+const extraLibraries: Array<{id: string; name: string; canCreate: boolean}> = [];
+const extraDestinations: Array<{id: string; name: string; provider: string}> = [];
 const state = { readDelay: 0, saveDelay: 0, saveFails: false, backupFixture: false };
 let demoBackups: BackupState = {schedule:{destination_source_id:'',interval_minutes:0,next_run_at:null},jobs:[]};
 Object.assign(window, { notesDemo: state });
@@ -14,15 +17,17 @@ if (!localStorage.getItem(key)) {
   put([{id:'welcome',libraryId:'personal',name:'Small things worth keeping.md',modifiedAt:Math.floor(Date.now()/1000),size:content.length,content,revision:await revision(content)}]);
 }
 const host: Host = { id:'host.tend.notes',user:{id:'demo-user',name:'You',role:'user'},onUnmount(){},documents:{version:1,
+  async setupLibrary(){const input=await demoStorageSetup('notebook');if(!input)return null;const library={id:crypto.randomUUID(),name:input.name,canCreate:true};extraLibraries.push(library);return library;},
   backups: {
+    async setupDestination(){const input=await demoStorageSetup('backup');if(!input)return null;const destination={id:crypto.randomUUID(),...input};extraDestinations.push(destination);return destination;},
     async state(){return structuredClone(demoBackups);},
-    async destinations(){return state.backupFixture ? [{id:'sample-drive',name:'Sample backup folder',provider:'local'}] : [];},
+    async destinations(){return [...(state.backupFixture ? [{id:'sample-drive',name:'Sample backup folder',provider:'local'}] : []),...extraDestinations];},
     async configure(input){if(!state.backupFixture)throw new Error('Automatic backups connect to your storage when Notes runs inside Tend.');demoBackups.schedule={destination_source_id:input.destinationSourceId,interval_minutes:input.intervalMinutes,next_run_at:input.intervalMinutes?Math.floor(Date.now()/1000)+input.intervalMinutes*60:null};return structuredClone(demoBackups);},
     async start(input){if(!state.backupFixture)throw new Error('ZIP exports use your Tend panel. This development preview contains sample notes only.');const now=Math.floor(Date.now()/1000);const job={id:crypto.randomUUID(),library_id:input.libraryId??null,destination_source_id:input.destinationSourceId??null,status:'completed',total:1,completed:1,error:null,filename:'sample.zip',sha256:'fixture',bytes:22,created_at:now,completed_at:now,cancel_requested:0,downloadAvailable:true};demoBackups.jobs.unshift(job);return job;},
     async cancel(id){const job=demoBackups.jobs.find(j=>j.id===id);if(!job)throw new Error('Export not found');return job;},
     downloadUrl(){return 'data:application/zip;base64,UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==';},
   },
-  async libraries(){return new URLSearchParams(location.search).has('empty') ? [] : [{id:'personal',name:'Personal notes',canCreate:!new URLSearchParams(location.search).has('unconnected')},{id:'work',name:'Work notes',canCreate:!new URLSearchParams(location.search).has('unconnected')}];},
+  async libraries(){return [...(new URLSearchParams(location.search).has('empty') ? [] : [{id:'personal',name:'Personal notes',canCreate:!new URLSearchParams(location.search).has('unconnected')},{id:'work',name:'Work notes',canCreate:!new URLSearchParams(location.search).has('unconnected')}]),...extraLibraries];},
   async index(){return {indexed:0,skipped:0,more:false};},
   async list(libraryId,query='',offset=0,filters={}){
     const library=get().filter(d=>d.libraryId===libraryId).map(d=>({...d,...unpack(d.content).organization}));

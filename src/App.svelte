@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, PenLine, Eye, X, ArrowLeft, RefreshCw } from 'lucide-svelte';
+  import { BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw } from 'lucide-svelte';
   import type { Host, Library, Note, Document } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import { renderMarkdown } from './markdown';
@@ -100,6 +100,23 @@
       }
     } catch { /* The last confirmed note stays visible; manual refresh reports errors. */ }
     finally { syncing = false; }
+  }
+  async function setupNotebook() {
+    if (opening) return;
+    if (!host.documents?.setupLibrary) { error = 'Update Tend to set up a notebook directly in Notes.'; return; }
+    opening = true; error = '';
+    try {
+      if (!(await ensureSaved())) return;
+      const selected = await host.documents.setupLibrary();
+      if (!alive || !selected) return;
+      // Setup may stay open while the current save completes. Recheck before switching.
+      if (!(await ensureSaved())) return;
+      libraries = await host.documents.libraries();
+      session?.abandon(); session = null; view = null;
+      libraryId = selected.id; query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false;
+      await loadList(); void buildSearch(libraryId);
+    } catch(e) { if(alive) error = message(e); }
+    finally { opening = false; }
   }
   async function quickCapture() {
     if (!selectedLibrary?.canCreate || opening || creating) return;
@@ -323,7 +340,7 @@
       <div class="library-picker"><label for="notes-library">NOTEBOOK</label><select id="notes-library" value={libraryId} onchange={selectLibrary} disabled={!libraries.length || opening}>{#each libraries as library}<option value={library.id}>{library.name}</option>{/each}</select></div>
       <button class="primary new-note" onclick={() => beginCreate()} disabled={!selectedLibrary?.canCreate}><Plus size={17}/> New note <kbd aria-hidden="true">+</kbd></button>
       <button class="quiet quick-capture" onclick={() => void quickCapture()} disabled={!selectedLibrary?.canCreate || opening} title="Quick capture (Ctrl+Shift+N)"><Zap size={13}/> Quick capture</button>
-      {#if !selectedLibrary?.canCreate}<a class="quiet setup-link" href="#/shell/files">Connect a notebook folder in Files</a>{/if}
+      <button class="quiet setup-link" disabled={opening} onclick={() => void setupNotebook()}><Plus size={13}/> {selectedLibrary?.canCreate ? "Add notebook" : "Set up notebook"}</button>
       {#if recoveries.length}<button class="quiet recovery-link" onclick={() => void showRecoveries()}>Recovery copies ({recoveries.length})</button>{/if}
       <label class="search"><Search size={15}/><input aria-label="Search your notes" placeholder="Search your notes" bind:value={query} oninput={search}/></label>
       <div class="smart-views" aria-label="Note views"><button class:chosen={!pinnedFilter} onclick={() => { pinnedFilter = false; void loadList(); }} aria-pressed={!pinnedFilter}><FileText size={13}/> All notes <span>{facets.total}</span></button><button class:chosen={pinnedFilter} onclick={() => { pinnedFilter = true; void loadList(); }} aria-pressed={pinnedFilter}><Pin size={13}/> Pinned <span>{facets.pinned}</span></button></div>
@@ -357,7 +374,7 @@
         </div>
         <footer><span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span><button class="save-status" onclick={() => void save()} disabled={view.saving || !view.dirty || view.conflict}>{#if view.saving}<LoaderCircle size={13} class="spin"/> Saving…{:else if view.dirty}<span class="unsaved-dot"></span>{view.error ? 'Not saved' : 'Save now'}{:else}<Check size={14}/> All changes saved{/if}</button></footer>
       {:else}
-        <div class="welcome"><span class="welcome-icon"><BookOpen size={37} strokeWidth={1.4}/></span><span class="eyebrow">YOUR OWN QUIET CORNER</span><h1>Make room for an idea.</h1>{#if !libraries.length}<p>Create a Documents library in Tend’s Files panel and connect a server folder to start your notebook.</p><a class="primary" href="#/shell/files">Open Files</a>{:else if !selectedLibrary?.canCreate}<p>Connect one server folder to this Documents library in Files to start creating notes.</p><a class="primary" href="#/shell/files">Open Files</a>{:else}<p>A quick thought. A plan taking shape. Something worth remembering.<br/>Keep it here, in your own words.</p><button class="primary" onclick={() => beginCreate()}><Plus size={17}/> Write your first note</button><button class="quiet" onclick={() => filePicker?.click()}><Upload size={14}/> Bring a Markdown file</button>{/if}<small>Simple to write. Easy to take with you.</small></div>
+        <div class="welcome"><span class="welcome-icon"><BookOpen size={37} strokeWidth={1.4}/></span><span class="eyebrow">YOUR OWN QUIET CORNER</span><h1>Make room for an idea.</h1>{#if !libraries.length}<p>Choose a server folder for your notes. Connect an existing folder or add a new one right here.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}><FolderOpen size={17}/> Set up your notebook</button>{:else if !selectedLibrary?.canCreate}<p>Choose a connected notebook or set up a server folder to start writing.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}>Set up your notebook</button>{:else}<p>A quick thought. A plan taking shape. Something worth remembering.<br/>Keep it here, in your own words.</p><button class="primary" onclick={() => beginCreate()}><Plus size={17}/> Write your first note</button><button class="quiet" onclick={() => filePicker?.click()}><Upload size={14}/> Bring a Markdown file</button>{/if}<small>Simple to write. Easy to take with you.</small></div>
       {/if}
     </main>
     <input class="hidden" bind:this={filePicker} type="file" accept=".md,.markdown,text/markdown" onchange={importFile}/>

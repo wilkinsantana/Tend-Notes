@@ -7,6 +7,7 @@ export interface Page { items: Note[]; total: number; nextOffset: number | null;
 export interface BackupJob { id: string; library_id: string | null; destination_source_id: string | null; status: string; total: number; completed: number; error: string | null; filename: string; sha256: string | null; bytes: number | null; created_at: number; completed_at: number | null; cancel_requested: number; downloadAvailable: boolean }
 export interface BackupState { schedule: {destination_source_id: string; interval_minutes: number; next_run_at: number | null}; jobs: BackupJob[] }
 export interface Backups {
+  setupDestination?(): Promise<{id: string; name: string; provider: string} | null>;
   state(): Promise<BackupState>;
   destinations(): Promise<Array<{id: string; name: string; provider: string}>>;
   configure(input: {destinationSourceId: string; intervalMinutes: number}): Promise<BackupState>;
@@ -16,6 +17,7 @@ export interface Backups {
 }
 export interface Documents {
   backups?: Backups;
+  setupLibrary?(): Promise<Library | null>;
   version: 1;
   libraries(): Promise<Library[]>;
   index(libraryId: string, skipped?: number): Promise<{ indexed: number; skipped: number; more: boolean }>;

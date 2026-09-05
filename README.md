@@ -21,11 +21,12 @@ alongside Sites. It runs inside Tend in the browser and desktop app.
 
 ## Start a notebook
 
-Use a Tend version with the document capability v1. In **Files**, create a
-**Documents** library and connect one server folder. Select that library in
-Notes and choose **New note**. Notes are saved in the folder as Markdown files;
-existing indexed Markdown files appear too. Scan the source in Files after
-adding files outside Tend.
+Use a Tend version with the document capability v1. Activate Notes in
+**Extensions**, open it, and choose **Set up your notebook**. Select an existing
+notebook or connect a server folder inside the Notes panel. Choose **New note**
+to start writing. **Add notebook** opens the same setup at any time. Notes stay
+as Markdown files in the selected folder; existing Markdown is scanned during
+setup. Files remains another way to access the same folders.
 
 Version 0.1 supports folders on Linux managed servers, including a server local
 to the panel. Cloud-mounted storage is not yet supported for editing. New notes
@@ -66,10 +67,13 @@ Prepared downloads remain available for 24 hours. Extract a ZIP into ordinary
 folders to use another Markdown app, or into a Tend Documents source and scan
 it in Files to restore your notes.
 
-For another copy, connect a storage folder through Tend's existing Files/Drives
-integration. Select it in Notes, then choose **Back up now** or enable an hourly,
-daily, or weekly schedule. Google Drive and other configured direct-storage
-providers use Tend's existing connection; Notes never receives their credentials.
+For another copy, open **Export & backups → Add backup destination** inside
+Notes. Choose a connected folder or **Connect a new drive**, complete the
+provider's existing Tend form, and choose **Use this destination**. The selected
+folder appears immediately. Choose **Back up now** or enable an hourly, daily,
+or weekly schedule. Google Drive and other providers reuse Tend's storage
+connections; credentials remain in the native host form and never reach the
+extension. Setup stays in Notes and does not enable backups automatically.
 Backups are dated ZIP snapshots under `TEND Notes backups`. The host verifies
 saved bytes before reporting success. Earlier storage snapshots remain until you
 remove them, so a later deletion does not erase previous backups.

@@ -4,6 +4,7 @@
 
 - Native extension, official catalog activation, MIT source distribution.
 - Documents library integration over host document API v1.
+- In-panel notebook and backup destination setup with shared Tend storage forms.
 - Quick capture, focus mode, safe preview, full-text search, import/export, explicit deletion.
 - Live refresh across online Tend browser and desktop sessions.
 - Confirmed autosave, revision conflicts, browser recovery copies.
@@ -12,7 +13,7 @@
 ## Later
 
 - Durable revision history and recovery beyond one browser.
-- Notebook creation inside Notes and richer organization controls.
+- Richer cross-notebook organization controls.
 - Verified cloud-provider editing adapters.
 - Full-text search across notebooks and optional attachments.
 
