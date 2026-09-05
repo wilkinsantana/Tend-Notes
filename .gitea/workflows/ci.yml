@@ -1,0 +1,52 @@
+name: TEND Notes quality and publication
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: tend-ci
+    steps:
+      - uses: https://gitea.com/actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Scan source history for secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(mktemp)"
+          scanner="$(mktemp -d)"
+          trap 'rm -f "$archive"; rm -rf "$scanner"' EXIT
+          curl --fail --location --retry 3 --output "$archive" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$scanner" gitleaks
+          "$scanner/gitleaks" git --redact --no-banner .
+      - name: Type and Svelte checks
+        run: bun run check
+      - name: Save and recovery regressions
+        run: bun test tests/session.test.ts
+      - name: Immutable publication regressions
+        run: python3 -m unittest discover -s tests -p "*_test.py"
+      - name: Audit production dependencies
+        run: bun audit --production
+      - name: Build and package exact source
+        run: bun run build
+      - name: Install browser test runtime
+        run: bunx playwright install --with-deps chromium
+      - name: Browser interaction and rendering safety
+        run: bun run test:browser
+      - name: Publish verified commit and immutable release
+        if: gitea.event_name == 'push' && gitea.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+          VERIFIED_SHA: ${{ gitea.sha }}
+        run: python3 scripts/publish.py
