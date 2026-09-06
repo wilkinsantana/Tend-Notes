@@ -11,6 +11,7 @@ alongside Sites. It runs inside Tend in the browser and desktop app.
 - Markdown editor, formatting shortcuts, focus mode, and a safe reading preview.
 - Live Tend theme colors and panel transparency, with readable menus and dialogs.
 - Quick capture, automatic saving, visible status, and conflict protection.
+- Reusable grocery, packing, meeting, daily-plan, project, and checklist templates.
 - Saved notes refresh across online Tend sessions about every three seconds.
 - Account- and tab-scoped browser draft recovery.
 - Import and export ordinary `.md` and `.markdown` files.
@@ -63,6 +64,26 @@ conflict protection as an ordinary rename and never replaces another note.
 Preview supports common Markdown, lists, code, and tables. Embedded HTML is
 displayed safely; external images load only after a click. Links open only after you
 click them. No external writing service, tracking, or AI account is required.
+
+## Start from a template
+
+Choose **Templates** beside New note and Quick capture. Browse a rendered
+preview, choose **Use template**, review the suggested name, then **Create note**.
+Grocery lists group items under Produce, Pantry, Refrigerated, and Household;
+packing lists, meeting notes, daily plans, project plans, and a blank checklist
+are also included. Replace the example items and quantities with your own.
+
+Each suggested name is distinct so reusing a template makes a fresh copy. You
+can edit the name before creating it; choosing an existing name with different
+contents shows an error without replacing that note. An identical existing
+name and contents may reopen that same file, matching normal note creation.
+Your earlier lists and their checked items remain intact. Cancelling either
+dialog creates no note. If the current draft cannot be saved, template creation
+stops so you can resolve it first. Templates use ordinary Markdown checkboxes
+and require no extra account, storage setup, or template service.
+
+This release includes built-in templates. Saving your own templates and a ToDo
+view across notes are planned; they are not yet available.
 
 ## Organize without a filing chore
 
@@ -121,7 +142,7 @@ bun run test
 bun run build
 ```
 
-`dist/tend-notes-0.2.2.zip` contains the native extension, integrity manifest,
+`dist/tend-notes-0.3.0.zip` contains the native extension, integrity manifest,
 license, and dependency notices. `bun run dev` opens the local demonstration;
 its clearly labeled sample notebook is for development only. Use
 `bun run test:browser` for interaction and preview-safety checks.

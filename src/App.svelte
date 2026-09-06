@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube } from 'lucide-svelte';
+  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube } from 'lucide-svelte';
   import type { Host, Library, Note, Document } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import Preview from './Preview.svelte';
+  import TemplatePicker from './TemplatePicker.svelte';
+  import type { NoteTemplate } from './templates';
   import MediaDialog from './MediaDialog.svelte';
   import { editMarkdown } from './formatting';
   import { markdownNewline, type MarkdownNewline } from './keyboard';
@@ -36,6 +38,9 @@
   let syncing = false;
   let refreshTimer: ReturnType<typeof setInterval>;
   let mobileEditor = $state(false);
+  let templateTrigger: HTMLElement | null = null;
+  let templatesOpen = $state(false);
+  let createTemplate = $state('');
   let createOpen = $state(false);
   let createName = $state('');
   let createContent = $state('');
@@ -110,7 +115,7 @@
     finally { indexing = false; if (alive && libraryId && libraryId !== id) void buildSearch(libraryId); }
   }
   async function refresh() {
-    if (syncing || document.visibilityState !== 'visible' || opening || creating || deleting || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind) return;
+    if (syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind) return;
     syncing = true;
     try {
       if (notes.length <= 100) await loadList();
@@ -244,7 +249,25 @@
     }
   }
   function beginCreate(content = '', name = '') {
-    createContent = content; createName = name; createError = ''; createOpen = true;
+    createTemplate = ''; createContent = content; createName = name; createError = ''; createOpen = true;
+  }
+  function openTemplates() {
+    if (!selectedLibrary?.canCreate || opening || creating || deleting) return;
+    templateTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    templatesOpen = true;
+  }
+  async function closeTemplates() {
+    templatesOpen = false;
+    await tick();
+    if (alive) templateTrigger?.focus();
+  }
+  function chooseTemplate(template: NoteTemplate) {
+    if (!selectedLibrary?.canCreate) return;
+    // A fresh default name avoids reopening an earlier identical template copy.
+    const stamp = new Date().toISOString().slice(0, 10);
+    beginCreate(template.content, `${template.name} ${stamp} ${crypto.randomUUID().slice(0, 8)}`);
+    createTemplate = template.name;
+    templatesOpen = false;
   }
   async function create() {
     if (!host.documents || creating) return;
@@ -252,6 +275,10 @@
     if (!createName.trim()) { createError = 'Give your note a name.'; return; }
     creating = true; createError = '';
     try {
+      if (createTemplate && !(await ensureSaved())) {
+        createError = 'Your open note could not be saved. Close this dialog to resolve it, then try your template again.';
+        return;
+      }
       const document = await host.documents.create({ libraryId, name, content: createContent });
       if (session?.view.conflict && createContent === session.view.content) {
         session.abandon(); drafts.remove(session.view.document.id); session = null;
@@ -260,7 +287,7 @@
         createError = 'The new note was saved. Resolve the open draft before switching notes.'; await loadList(); return;
       }
       if (!(await ensureSaved())) return;
-      session?.abandon(); connect(document); createOpen = false; await loadList();
+      session?.abandon(); connect(document); if (createTemplate) mode = 'edit'; createOpen = false; await loadList();
       await tick(); editor?.focus();
     } catch (e) { createError = message(e); }
     finally { creating = false; }
@@ -389,7 +416,7 @@
   }
   function shortcuts(event: KeyboardEvent) {
     if (!(event.ctrlKey || event.metaKey)) return;
-    if (createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind) return;
+    if (templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind) return;
     if (event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); void quickCapture(); }
     if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
     if (event.target !== editor) return;
@@ -442,12 +469,13 @@
   {:else if loading}
     <div class="welcome" role="status"><LoaderCircle class="spin"/><p>Opening your notebooks…</p></div>
   {:else}
-    <aside>
+    <aside inert={templatesOpen}>
       <div class="brand"><span class="brand-icon"><BookOpen size={20}/></span><div><strong>TEND Notes</strong><small>A little space to think.</small></div></div>
       <div class="library-picker"><div class="notebook-label"><label for="notes-library">NOTEBOOK</label><button class="icon" aria-label="Rename notebook" title="Rename notebook" disabled={!selectedLibrary || actionBusy} onclick={() => beginRename()}><TextCursorInput size={14}/></button></div><select id="notes-library" value={libraryId} onchange={selectLibrary} disabled={!libraries.length || opening}>{#each libraries as library}<option value={library.id}>{library.name}</option>{/each}</select></div>
       <div class="capture-actions" aria-label="Notebook actions">
         <button class="primary new-note" aria-label="New note" title="New note" onclick={() => beginCreate()} disabled={!selectedLibrary?.canCreate}><FilePlus2 size={20}/></button>
         <button class="icon quick-capture" aria-label="Quick capture" title="Quick capture (Ctrl+Shift+N)" onclick={() => void quickCapture()} disabled={!selectedLibrary?.canCreate || opening}><Zap size={19}/></button>
+        <button class="icon" aria-label="Templates" title="Start from a template" onclick={openTemplates} disabled={!selectedLibrary?.canCreate || opening || creating}><LayoutTemplate size={19}/></button>
         <button class="icon setup-link" aria-label={selectedLibrary?.canCreate ? 'Add notebook' : 'Set up notebook'} title={selectedLibrary?.canCreate ? 'Add notebook' : 'Set up notebook'} disabled={opening} onclick={() => void setupNotebook()}><BookPlus size={20}/></button>
       </div>
       {#if !mobileEditor && hasLoadedNotes}<button class="quiet continue-writing" disabled={opening} onclick={() => void continueWriting()}><PenLine size={14}/> Continue writing</button>{/if}
@@ -477,7 +505,7 @@
       </div>
       <div class="sidebar-footer">{#if indexing}<small role="status">Preparing full-text search…</small>{/if}{#if indexError}<small role="status">{indexError}</small>{/if}<button class="quiet" onclick={() => filePicker?.click()} disabled={!selectedLibrary?.canCreate}><Upload size={14}/> Import Markdown</button><button class="quiet" onclick={() => backupOpen = true}><Download size={14}/> Export & backups</button><small>Yours to keep. Plain Markdown.</small></div>
     </aside>
-    <main>
+    <main inert={templatesOpen}>
       <header><button class="icon desktop-toggle" onclick={() => sidebar = !sidebar} aria-label={sidebar ? 'Hide notebooks' : 'Show notebooks'} title={sidebar ? 'Hide notebooks' : 'Show notebooks'}>{#if sidebar}<PanelLeftClose size={18}/>{:else}<PanelLeftOpen size={18}/>{/if}</button><button class="icon mobile-back" onclick={() => mobileEditor = false} aria-label="Back to notes"><ArrowLeft size={18}/></button><div class="breadcrumb">{#if view}<button class="note-title" aria-label="Rename current note" title="Rename note" onclick={() => beginRename(view!.document)}><h1>{title(view.document.name)}</h1></button>{:else}{selectedLibrary?.name ?? 'Your notes'}{/if}</div>{#if view}{#if quickCaptureTitle && host.documents?.rename}<button class="suggest-title" aria-label="Use first line as title" title={`Use “${quickCaptureTitle}” as title`} onclick={useFirstLineAsTitle}><TextCursorInput size={14}/><span>Use first line as title</span></button>{/if}<button class="icon focus-toggle" aria-label={focusMode ? "Exit focus mode" : "Focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} onclick={() => { focusMode = !focusMode; mode = "edit"; }}>{#if focusMode}<Minimize size={16}/>{:else}<Maximize size={16}/>{/if}</button><div class="document-actions"><button class="icon" class:chosen={parsed.organization.pinned} aria-label={parsed.organization.pinned ? "Unpin note" : "Pin note"} aria-pressed={parsed.organization.pinned} title={parsed.organization.pinned ? "Unpin note" : "Pin note"} onclick={() => organize({pinned: !parsed.organization.pinned})}><Pin size={16}/></button><button class="icon" aria-label="Organize note" title="Tags and color" aria-expanded={organizeOpen} onclick={() => organizeOpen = !organizeOpen}><Tag size={16}/></button><button class="icon" aria-label="Export Markdown" title="Export Markdown" onclick={() => download(view!.content, view!.document.name)}><Download size={17}/></button><button class="icon" aria-label="Delete note" title="Delete note" onclick={() => beginDelete(view!.document)}><Trash2 size={16}/></button></div><div class="view-modes" aria-label="Editor view"><button class:active={mode === 'edit'} class="icon" aria-label="Edit Markdown" title="Edit Markdown" onclick={() => mode = 'edit'}><PenLine size={16}/></button><button class:active={mode === 'split'} class="icon split-button" aria-label="Split view" title="Split view" aria-pressed={mode === 'split'} onclick={() => mode = mode === 'split' ? 'edit' : 'split'}><Columns2 size={16}/></button><button class:active={mode === 'preview'} class="icon" aria-label="Preview" title="Preview" onclick={() => mode = 'preview'}><Eye size={17}/></button></div>{/if}</header>
       {#if error}<div class="notice error" role="alert">{error}<button class="icon" aria-label="Dismiss message" onclick={() => error = ''}><X size={15}/></button></div>{/if}
       {#if recoveries.length && !view}
@@ -517,12 +545,13 @@
     </main>
     <input class="hidden" bind:this={filePicker} type="file" accept=".md,.markdown,text/markdown" onchange={importFile}/>
   {/if}
+  {#if templatesOpen}<TemplatePicker select={chooseTemplate} close={() => void closeTemplates()}/>{/if}
   {#if backupOpen}<BackupPanel api={host.documents?.backups} {libraryId} libraryName={selectedLibrary?.name ?? "Current notebook"} beforeAction={ensureSaved} close={() => backupOpen = false}/>{/if}
   {#if createOpen || deleteOpen || reloadOpen || renameOpen}
     <div class="notes-dialog-layer" role="presentation"><div class="notes-dialog" use:focusDialog role="dialog" aria-modal="true" aria-label={renameOpen ? 'Rename ' + renameOpen : createOpen ? 'New note' : deleteOpen ? 'Delete note' : 'Reload saved version'} tabindex="-1" onkeydown={modalKey}>
       <button class="icon close" aria-label="Close dialog" onclick={() => { createOpen = false; deleteOpen = false; reloadOpen = false; renameOpen = null; }} disabled={creating || deleting || actionBusy}><X size={18}/></button>
       {#if renameOpen}<TextCursorInput size={26}/><h2>Rename {renameOpen}</h2><form onsubmit={e => { e.preventDefault(); void rename(); }}><label for="rename-name">{renameOpen === 'note' ? 'Note' : 'Notebook'} name</label><input id="rename-name" bind:value={renameName} maxlength={renameOpen === 'note' ? 220 : 120} required disabled={actionBusy}/><small>{renameOpen === 'note' ? 'The Markdown filename changes. Your writing stays intact.' : 'A name that makes this notebook easy to find.'}</small><button class="primary" disabled={actionBusy || !renameName.trim()}>{actionBusy ? 'Renaming…' : 'Save name'}</button></form>
-      {:else if createOpen}<BookOpen size={26}/><h2>A fresh page.</h2><p>Give your note a name. You can start writing right away.</p><form onsubmit={e => { e.preventDefault(); void create(); }}><label for="new-note-name">Note name</label><input id="new-note-name" bind:value={createName} placeholder="An idea worth keeping" maxlength="220" required disabled={creating}/><small>Saved as a Markdown file in {selectedLibrary?.name}.</small>{#if createError}<p class="form-error" role="alert">{createError}</p>{/if}<button class="primary" type="submit" disabled={creating}>{#if creating}<LoaderCircle size={16} class="spin"/> Creating…{:else}<Plus size={16}/> Create note{/if}</button></form>
+      {:else if createOpen}<BookOpen size={26}/><h2>{createTemplate ? createTemplate : 'A fresh page.'}</h2><p>{createTemplate ? 'Create a new copy to make your own. Your earlier notes stay as they are.' : 'Give your note a name. You can start writing right away.'}</p><form onsubmit={e => { e.preventDefault(); void create(); }}><label for="new-note-name">Note name</label><input id="new-note-name" bind:value={createName} placeholder="An idea worth keeping" maxlength="220" required disabled={creating}/><small>Saved as a Markdown file in {selectedLibrary?.name}.</small>{#if createError}<p class="form-error" role="alert">{createError}</p>{/if}<button class="primary" type="submit" disabled={creating}>{#if creating}<LoaderCircle size={16} class="spin"/> Creating…{:else}<Plus size={16}/> Create note{/if}</button></form>
       {:else if deleteOpen}<Trash2 size={26}/><h2>Delete this note?</h2><p>“{actionNote ? title(actionNote.name) : ''}” will be permanently deleted from its storage folder. This cannot be undone.</p><div class="dialog-actions"><button onclick={() => deleteOpen = false} disabled={deleting}>Cancel</button><button class="danger" onclick={() => void remove()} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete note'}</button></div>
       {:else}<RefreshCw size={26}/><h2>Replace this draft?</h2><p>Your current unsaved edits will be replaced by the saved version. Export a copy first if you want to keep them.</p><button class="quiet" onclick={() => download(view!.content, view!.document.name)}>Export draft</button><button class="danger" onclick={() => void reload()}>Reload saved version</button>{/if}
       {#if actionError}<p class="form-error" role="alert">{actionError}</p>{/if}
