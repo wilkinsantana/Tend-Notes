@@ -153,3 +153,12 @@ separate approved milestones. ToDo is delivered in the following milestone.
 This removes the observed large-checklist UI freeze. Full production acceptance
 still requires the remaining recovery, mobile/offline, editing, and integration
 milestones above; a worker is not an offline sync engine or a security sandbox.
+
+
+## 0.4.2 — Reproducible worker packages
+
+- Sort emitted JavaScript paths before building manifest integrity entries so
+  equivalent builds produce the same archive regardless of filesystem order.
+- A packaging regression constructs identical assets in different orders and
+  requires byte-identical ZIP output. Previously published packages remain
+  immutable; this release retains the 0.4.1 worker and paging behavior.
