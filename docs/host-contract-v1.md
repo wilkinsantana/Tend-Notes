@@ -67,6 +67,16 @@ summaries. `list(libraryId, query, offset, filters)` supports `tag`, `color`,
 active notebook, independent of pagination and current filters. Pins sort first.
 Files deletion, source relocation, and rescan invalidate derived metadata.
 
+The `template` tag identifies user-defined reusable notes. Notes discovers one
+metadata page at a time through the existing tag filter, then reads the chosen
+canonical document before preparing a copy. Designation changes are ordinary
+revision-checked NoteSession saves. Removing the designation never deletes the
+document. A new copy clears `template` and `pinned`, preserves other portable
+metadata, and enters ToDo normally; designated source templates are excluded
+from task extraction. There is no new host storage or capability version.
+Relative uploaded media cannot yet be copied through this flow; Notes refuses
+such copies visibly until attachment copying can preserve their contents.
+
 ### ZIP exports and connected-drive backups
 
 `host.documents.backups` exposes `state`, `destinations`, `configure`, `start`,

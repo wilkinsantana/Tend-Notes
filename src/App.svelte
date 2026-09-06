@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays } from 'lucide-svelte';
-  import type { Host, Library, Note, Document } from './host';
+  import type { Host, Library, Note, Document, Documents } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import Preview from './Preview.svelte';
   import TemplatePicker from './TemplatePicker.svelte';
@@ -10,6 +10,7 @@
   import { TaskWorkspace, type TaskState } from './taskWorkspace';
   import { WorkerTaskProcessor } from './taskProcessor';
   import type { NoteTemplate } from './templates';
+  import { isPersonalTemplate, listPersonalTemplates, markPersonalTemplate, readPersonalTemplate } from './personalTemplates';
   import { dailyNote } from './daily';
   import MediaDialog from './MediaDialog.svelte';
   import { editMarkdown } from './formatting';
@@ -46,6 +47,16 @@
   let templateTrigger: HTMLElement | null = null;
   let todayOpening = $state(false);
   let templatesOpen = $state(false);
+  // This is a capability reference, not reactive document data. `$state.raw`
+  // rerenders on replacement while preserving the capability's identity.
+  let templateOpenDocuments = $state.raw<Documents | null>(null);
+  let templateOpenAccount = $state<string | undefined>(undefined);
+  let templateOpenLibrary = $state('');
+  let templateSelection = 0;
+  let templateSelectionBusy = $state(false);
+  let templateActionBusy = $state(false);
+  let templateActionError = $state('');
+  let templateRefresh = $state(0);
   let todoOpen = $state(false);
   let trashOpen = $state(false);
   let trashTrigger: HTMLElement | null = null;
@@ -395,11 +406,15 @@
     createTemplate = ''; createContent = content; createName = name; createError = ''; createOpen = true;
   }
   function openTemplates() {
-    if (!selectedLibrary?.canCreate || opening || creating || deleting) return;
+    if (!selectedLibrary?.canCreate || opening || creating || deleting || !host.documents) return;
+    templateOpenDocuments = host.documents; templateOpenAccount = host.user?.id; templateOpenLibrary = libraryId;
     templateTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    templatesOpen = true;
+    templateActionError = ''; templateSelectionBusy = false; templateActionBusy = false; templatesOpen = true;
   }
   async function closeTemplates() {
+    templateSelection += 1;
+    templateSelectionBusy = false;
+    templateActionBusy = false;
     templatesOpen = false;
     await tick();
     if (alive) templateTrigger?.focus();
@@ -411,6 +426,59 @@
     beginCreate(template.content, `${template.name} ${stamp} ${crypto.randomUUID().slice(0, 8)}`);
     createTemplate = template.name;
     templatesOpen = false;
+  }
+  function templateContext(documents: NonNullable<Host['documents']>, account: string | undefined, library: string, ticket?: number) {
+    return alive && templatesOpen && host.documents === documents && host.user?.id === account && libraryId === library && (ticket === undefined || templateSelection === ticket);
+  }
+  async function choosePersonalTemplate(note: Note) {
+    const documents = templateOpenDocuments;
+    const account = templateOpenAccount;
+    const library = templateOpenLibrary;
+    if (!documents || !selectedLibrary?.canCreate || templateSelectionBusy || !templateContext(documents, account, library)) return;
+    const ticket = ++templateSelection;
+    templateSelectionBusy = true; templateActionError = '';
+    try {
+      if (!(await ensureSaved())) {
+        if (templateContext(documents, account, library, ticket)) templateActionError = 'Your open note could not be saved. Resolve the draft before using a template.';
+        return;
+      }
+      if (!templateContext(documents, account, library, ticket)) return;
+      const template = await readPersonalTemplate(documents, note);
+      if (!templateContext(documents, account, library, ticket)) return;
+      chooseTemplate(template);
+    } catch (e) {
+      if (templateContext(documents, account, library, ticket)) templateActionError = message(e);
+    } finally {
+      if (alive && templateSelection === ticket) templateSelectionBusy = false;
+    }
+  }
+  async function toggleCurrentTemplate(enabled: boolean) {
+    const current = session;
+    const documents = templateOpenDocuments;
+    const account = templateOpenAccount;
+    const library = templateOpenLibrary;
+    const ticket = templateSelection;
+    const canWrite = current && (current.view.document.canWrite ?? selectedLibrary?.canCreate);
+    if (!current || !documents || !canWrite || templateActionBusy || templateSelectionBusy || !templateContext(documents, account, library, ticket)) return;
+    templateActionBusy = true; templateActionError = '';
+    const matches = () => templateContext(documents, account, library, ticket) && session === current;
+    try {
+      if (!(await ensureSaved())) {
+        if (matches()) templateActionError = 'Your open note could not be saved. Resolve the draft before changing its template tag.';
+        return;
+      }
+      if (!matches()) return;
+      current.edit(markPersonalTemplate(current.view.content, enabled));
+      if (!(await current.save())) {
+        if (matches()) templateActionError = 'This template change was not saved. Your draft is still open.';
+        return;
+      }
+      if (!matches()) return;
+      refreshDrafts(); await loadList();
+      if (matches()) templateRefresh += 1;
+    } catch (e) {
+      if (matches()) templateActionError = message(e);
+    } finally { if (matches()) templateActionBusy = false; }
   }
   async function create() {
     if (!host.documents || creating) return;
@@ -726,7 +794,22 @@
     </main>
     <input class="hidden" bind:this={filePicker} type="file" accept=".md,.markdown,text/markdown" onchange={importFile}/>
   {/if}
-  {#if templatesOpen}<TemplatePicker select={chooseTemplate} close={() => void closeTemplates()}/>{/if}
+  {#if templatesOpen && templateOpenDocuments}<TemplatePicker
+    select={chooseTemplate}
+    selectPersonal={choosePersonalTemplate}
+    toggleCurrent={toggleCurrentTemplate}
+    close={() => void closeTemplates()}
+    api={templateOpenDocuments}
+    libraryId={templateOpenLibrary}
+    isCurrent={() => templateContext(templateOpenDocuments!, templateOpenAccount, templateOpenLibrary)}
+    currentPersonal={isPersonalTemplate(view?.content ?? '')}
+    hasCurrentNote={!!view}
+    canToggleCurrent={!!view && (view.document.canWrite ?? selectedLibrary?.canCreate ?? false)}
+    selectionBusy={templateSelectionBusy}
+    actionBusy={templateActionBusy}
+    actionError={templateActionError}
+    refreshKey={templateRefresh}
+  />{/if}
   {#if backupOpen}<BackupPanel api={host.documents?.backups} {libraryId} libraryName={selectedLibrary?.name ?? "Current notebook"} beforeAction={ensureSaved} close={() => backupOpen = false}/>{/if}
   {#if createOpen || deleteOpen || reloadOpen || renameOpen}
     <div class="notes-dialog-layer" role="presentation"><div class="notes-dialog" use:focusDialog role="dialog" aria-modal="true" aria-label={renameOpen ? 'Rename ' + renameOpen : createOpen ? 'New note' : deleteOpen ? 'Delete note' : 'Reload saved version'} tabindex="-1" onkeydown={modalKey}>

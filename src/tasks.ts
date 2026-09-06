@@ -1,4 +1,5 @@
 import { Marked, type Token } from 'marked';
+import { isPersonalTemplate } from './personalTemplates';
 
 export interface MarkdownTask {
   key: string;
@@ -88,6 +89,8 @@ function candidates(content: string): Candidate[] {
 }
 
 export function extractTasks(content: string): MarkdownTask[] {
+  // Template checkboxes describe future copies, not active commitments.
+  if (isPersonalTemplate(content)) return [];
   const possible = candidates(content);
   if (possible.length === 0) return [];
   const semantic = semanticCandidateIds(content, possible);

@@ -104,7 +104,22 @@ dialog creates no note. If the current draft cannot be saved, template creation
 stops so you can resolve it first. Templates use ordinary Markdown checkboxes
 and require no extra account, storage setup, or template service.
 
-This release includes built-in templates. Saving your own templates is planned.
+To reuse your own writing, open the note and choose **Templates**, then **Add
+current note to templates**. This adds the visible `template` tag to the original
+Markdown note. **Your templates** lists tagged notes in the current notebook;
+editing the original updates the starting point for future copies. Removing it
+from Templates removes only that tag, leaving the note and its writing intact.
+
+A new copy preserves the writing, ordinary tags, and color, but clears the
+template tag and pin. It leaves the original unchanged. Template checkboxes do
+not appear as active ToDo items; copies do. You can also add or remove the
+`template` tag through normal note organization. All of this survives Markdown
+export, backup, and reimport without a separate template database.
+
+Web links remain portable. Templates containing uploaded image or audio paths
+currently cannot create copies: those files belong to the original folder, and
+copying only their Markdown could break the media. The picker explains this
+instead of creating an incomplete copy. Attachment copying remains planned.
 
 ## Notes and ToDo together
 
