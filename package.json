@@ -1,6 +1,6 @@
 {
   "name": "tend-notes",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "Your thoughts, in Markdown. The native notes extension for Tend.",
   "license": "MIT",
@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5186",
     "check": "svelte-check --tsconfig tsconfig.json --threshold error",
-    "test": "bun test tests/session.test.ts tests/organization.test.ts",
+    "test": "bun test tests/session.test.ts tests/organization.test.ts tests/keyboard.test.ts",
     "build": "vite build && python3 scripts/package.py",
     "test:browser": "playwright test"
   },

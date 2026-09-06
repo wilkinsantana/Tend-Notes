@@ -348,3 +348,94 @@ test('media insertion never applies old offsets to a refreshed remote document',
   await expect(page.getByRole('alert')).toContainText('changed elsewhere');
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tend-notes:demo-documents')!)[0].content)).toBe('REMOTE change must survive');
 });
+
+test('Enter continues Markdown lists, tasks and quotes, and empty markers exit', async ({page}) => {
+  await page.goto('/');
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  await editor.fill('1. First');
+  await editor.press('End'); await editor.press('Enter');
+  await expect(editor).toHaveValue('1. First\n2. ');
+  await editor.pressSequentially('Second'); await editor.press('Enter');
+  await expect(editor).toHaveValue('1. First\n2. Second\n3. ');
+  await editor.press('Enter');
+  await expect(editor).toHaveValue('1. First\n2. Second\n\n');
+  await editor.pressSequentially('After the list');
+  await expect(page.getByRole('button',{name:'All changes saved'})).toBeVisible();
+  await page.reload(); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await expect(editor).toHaveValue('1. First\n2. Second\n\nAfter the list');
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await expect(page.locator('.preview .rendered-markdown > p')).toHaveText('After the list');
+  await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
+  for(const [body,continued,exited] of [
+    ['- Bullet','- Bullet\n- ','- Bullet\n\n'],
+    ['  * Nested','  * Nested\n  * ','  * Nested\n  \n  '],
+    ['- [x] Done','- [x] Done\n- [ ] ','- [x] Done\n\n'],
+    ['> Quote','> Quote\n> ','> Quote\n\n'],
+  ]) {
+    await editor.fill(body); await editor.press('End'); await editor.press('Enter');
+    await expect(editor).toHaveValue(continued); await editor.press('Enter');
+    await expect(editor).toHaveValue(exited);
+  }
+});
+
+test('Markdown keyboard edits preserve undo, plain newlines, code and selection', async ({page}) => {
+  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  await editor.fill('9. Last'); await editor.press('End'); await editor.press('Enter');
+  await expect(editor).toHaveValue('9. Last\n10. ');
+  await editor.press('Control+z'); await expect(editor).toHaveValue('9. Last');
+  await editor.press('Control+Shift+z'); await expect(editor).toHaveValue('9. Last\n10. ');
+  await editor.fill('- One'); await editor.press('End'); await editor.press('Shift+Enter');
+  await expect(editor).toHaveValue('- One\n');
+  await editor.fill('```md\n1. Literal'); await editor.press('End'); await editor.press('Enter');
+  await expect(editor).toHaveValue('```md\n1. Literal\n');
+  await editor.fill('  const count = 1;'); await editor.press('End'); await editor.press('Enter');
+  await expect(editor).toHaveValue('  const count = 1;\n  ');
+  await editor.fill('- First second');
+  await editor.evaluate((node: HTMLTextAreaElement)=>node.setSelectionRange(7,7));
+  await editor.press('Enter'); await expect(editor).toHaveValue('- First\n-  second');
+});
+
+test('mobile line-break input continues a list without handling paste or composition', async ({page}) => {
+  await page.setViewportSize({width:390,height:780}); await page.goto('/');
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  await editor.fill('- [X] Done'); await editor.press('End');
+  await editor.evaluate(node=>node.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertLineBreak',bubbles:true,cancelable:true})));
+  await expect(editor).toHaveValue('- [X] Done\n- [ ] ');
+  const ignored=await editor.evaluate(node=>[
+    node.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertLineBreak',isComposing:true,bubbles:true,cancelable:true})),
+    node.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertFromPaste',data:'1. Pasted',bubbles:true,cancelable:true})),
+  ]);
+  expect(ignored).toEqual([true,true]);
+  await expect(editor).toHaveValue('- [X] Done\n- [ ] ');
+});
+
+test('panel transparency changes canvas and sidebar without fading text or dialogs', async ({page}) => {
+  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  await editor.fill('Keep this draft while changing the panel background.');
+  const backgroundAlpha=(selector:string)=>page.locator(selector).evaluate(element=>{
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
+    const context=canvas.getContext('2d')!;
+    context.fillStyle=getComputedStyle(element).backgroundColor;context.fillRect(0,0,1,1);
+    return context.getImageData(0,0,1,1).data[3];
+  });
+  expect(await backgroundAlpha('.notes-app')).toBe(255);
+  expect(await backgroundAlpha('aside')).toBe(255);
+  await page.locator('#app').evaluate(element=>(element as HTMLElement).style.setProperty('--tend-panel-surface-alpha','0%'));
+  expect(await backgroundAlpha('.notes-app')).toBe(0);
+  expect(await backgroundAlpha('aside')).toBe(0);
+  expect(await editor.evaluate(element=>getComputedStyle(element).opacity)).toBe('1');
+  await expect(editor).toHaveValue('Keep this draft while changing the panel background.');
+  await page.getByRole('button',{name:'Preview light theme',exact:true}).click();
+  expect(await backgroundAlpha('.notes-app')).toBe(0);
+  await page.getByRole('button',{name:'Delete note',exact:true}).click();
+  expect(await backgroundAlpha('.notes-dialog')).toBe(255);
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await page.locator('#app').evaluate(element=>(element as HTMLElement).style.setProperty('--tend-panel-surface-alpha','100%'));
+  expect(await backgroundAlpha('.notes-app')).toBe(255);
+  expect(await backgroundAlpha('aside')).toBe(255);
+  await expect(editor).toHaveValue('Keep this draft while changing the panel background.');
+});

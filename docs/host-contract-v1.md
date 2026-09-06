@@ -149,3 +149,12 @@ frames are created only after a deliberate click. Source HTML cannot create
 trusted media controls, scripts, or frames. Browser object URLs and microphone
 tracks are cleaned up on close/unmount. Media insertion captures the current
 note/body and cannot apply stale cursor positions to refreshed remote content.
+
+### Panel appearance
+
+Notes follows the host theme tokens and the inherited
+`--tend-panel-surface-alpha` percentage for its canvas and sidebar. Tend sets
+it to `0%` for transparent windows and `100%` for solid or reduced-transparency
+mode. Older hosts default to solid Notes surfaces. Menus, dialogs, controls,
+and text retain their own opaque theme colors. Changes apply without remounting
+or interrupting the current draft.

@@ -9,7 +9,7 @@ alongside Sites. It runs inside Tend in the browser and desktop app.
 - Full-text searchable notes backed by your Documents libraries.
 - Portable tags, pinned notes, gentle color labels, and quick sidebar filters.
 - Markdown editor, formatting shortcuts, focus mode, and a safe reading preview.
-- Live Tend theme colors, including dark surfaces and matching accent contrast.
+- Live Tend theme colors and panel transparency, with readable menus and dialogs.
 - Quick capture, automatic saving, visible status, and conflict protection.
 - Saved notes refresh across online Tend sessions about every three seconds.
 - Account- and tab-scoped browser draft recovery.
@@ -115,7 +115,7 @@ bun run test
 bun run build
 ```
 
-`dist/tend-notes-0.2.1.zip` contains the native extension, integrity manifest,
+`dist/tend-notes-0.2.2.zip` contains the native extension, integrity manifest,
 license, and dependency notices. `bun run dev` opens the local demonstration;
 its clearly labeled sample notebook is for development only. Use
 `bun run test:browser` for interaction and preview-safety checks.
@@ -140,6 +140,11 @@ The two-row editor offers headings, emphasis, lists, checklists, quotes, links,
 inline/fenced code, tables, dividers, images, YouTube videos, and audio. Preview
 renders Markdown; Split shows source and output together and toggles back to
 editing when clicked again. On narrow panels, Split stacks the two panes.
+
+Enter continues numbered lists, bullets, checklists, block quotes, and code
+indentation. New checklist items start unchecked. Press Enter on an empty item
+to remove its marker and finish the list, or Shift+Enter for a plain newline.
+Fenced code stays literal, and normal Tab navigation remains available.
 
 Upload PNG, JPEG, GIF, WebP, MP3, M4A, WAV, Ogg, or WebM files up to 20 MB.
 Audio can also be recorded in a supported HTTPS browser, up to five minutes.
