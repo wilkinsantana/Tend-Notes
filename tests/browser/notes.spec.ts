@@ -130,7 +130,7 @@ test('Tend color tokens update immediately without remounting or losing text', a
 });
 
 
-test('dialogs remain usable with host modal styles and deletion requires the name', async ({page}) => {
+test('dialogs remain usable with host modal styles and deletion requires confirmation', async ({page}) => {
   await page.goto('/');
   // The native extension shares the host document and its framework styles.
   await page.addStyleTag({content:'.modal{visibility:hidden;pointer-events:none;position:fixed;inset:0}'});
@@ -142,8 +142,13 @@ test('dialogs remain usable with host modal styles and deletion requires the nam
   await page.getByRole('button',{name:'Delete note',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Delete note',exact:true});
   const remove=dialog.getByRole('button',{name:'Delete note',exact:true});
-  await expect(remove).toBeDisabled();
-  await dialog.getByLabel('Type the note name to delete it').fill('Delete me');
+  await expect(dialog).toContainText('Delete me');
+  await expect(dialog.getByRole('textbox')).toHaveCount(0);
+  await expect(remove).toBeEnabled();
+  await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('textbox',{name:'Note Markdown'})).toHaveValue('A disposable test note');
+  await page.getByRole('button',{name:'Delete note',exact:true}).click();
   await remove.click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('button',{name:/Delete me.*Markdown/})).toHaveCount(0);
@@ -271,7 +276,6 @@ test('list actions rename, pin, color and delete another note without opening it
   await page.getByRole('button',{name:'Save name',exact:true}).click();
   await expect(page.locator('#notes-library option:checked')).toHaveText('My ideas');
   await page.getByRole('button',{name:'Delete Saved thoughts',exact:true}).click();
-  await page.getByLabel('Type the note name to delete it').fill('Saved thoughts');
   await page.getByRole('dialog',{name:'Delete note',exact:true}).getByRole('button',{name:'Delete note',exact:true}).click();
   await expect(page.getByRole('button',{name:/Saved thoughts.*Markdown/})).toHaveCount(0);
   await expect(editor).toHaveValue('Keep editing this note');

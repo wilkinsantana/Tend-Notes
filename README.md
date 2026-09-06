@@ -52,7 +52,7 @@ it keeps your draft and offers **Export draft**, **Save as new note**, or
 **Reload saved version**. Recovery copies live in this browser, scoped to your
 Tend account and tab; they are not a backup or cross-device synchronization.
 The saved Markdown file is authoritative. Deleting a note deletes its original
-file after explicit confirmation. Keep your normal storage backups.
+file after a confirmation showing its title, with Cancel and Delete buttons. No title typing is required. Keep your normal storage backups.
 
 Preview supports common Markdown, lists, code, and tables. Embedded HTML is
 displayed safely; external images load only after a click. Links open only after you
@@ -115,7 +115,7 @@ bun run test
 bun run build
 ```
 
-`dist/tend-notes-0.2.0.zip` contains the native extension, integrity manifest,
+`dist/tend-notes-0.2.1.zip` contains the native extension, integrity manifest,
 license, and dependency notices. `bun run dev` opens the local demonstration;
 its clearly labeled sample notebook is for development only. Use
 `bun run test:browser` for interaction and preview-safety checks.
