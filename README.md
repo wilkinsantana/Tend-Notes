@@ -98,13 +98,18 @@ task list before trying again. Identical labels remain separate tasks. A failed
 save keeps the last confirmed state visible, and opening ToDo first saves your
 current draft; a failed draft save keeps you in the editor.
 
-The view scans saved notes when opened or refreshed. It does not scan hidden
+The view scans saved notes when opened or refreshed. Checklist parsing runs in a
+background worker so large notes do not block typing or cancelling a scan.
+Search and filters cover the complete loaded collection; Prev/Next pages show
+100 tasks at a time without dropping the other results. It does not scan hidden
 code examples as tasks, and read-only notebooks remain viewable. Disconnected
 sources and partial results are shown explicitly. A scan can be cancelled by
 returning to Notes. Very large collections are bounded at 10,000 scanned notes
 and 20 MiB of retained task-bearing Markdown per view, with a visible incomplete
 result if reached. This is an online snapshot; refresh after editing in another
-session. Due dates, reminders, recurrence, and offline task updates are future
+session. Worker startup failures appear explicitly; return to Notes and reopen
+ToDo to retry. The worker comes from the same verified extension package and
+sends no data to another service. Due dates, reminders, recurrence, and offline task updates are future
 milestones.
 
 ## Organize without a filing chore

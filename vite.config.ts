@@ -21,5 +21,13 @@ export default defineConfig({
       this.emitFile({ type:'asset', fileName:'bundled-packages.json', source:JSON.stringify([...names].sort()) });
     },
   }],
-  build: { lib: { entry: 'src/index.ts', formats: ['es'], fileName: () => 'index.js' }, sourcemap: false },
+  build: {
+    lib: {
+      entry: { index: 'src/index.ts', 'task-worker': 'src/taskWorker.ts' },
+      formats: ['es'],
+      fileName: (_format, entryName) => `${entryName}.js`,
+    },
+    rollupOptions: { output: { chunkFileNames: 'chunks/[name]-[hash].js' } },
+    sourcemap: false,
+  },
 });

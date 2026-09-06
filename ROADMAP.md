@@ -137,3 +137,19 @@ separate approved milestones. ToDo is delivered in the following milestone.
 - No additional permission, account, schema, task database, or proprietary
   metadata is introduced. Task scheduling, recovery/history, and the Notes PWA
   remain approved unfinished work.
+
+
+## 0.4.1 — Responsive large checklists
+
+- Task parsing and exact checkbox edits run in a packaged same-origin worker.
+  Cancelling a scan terminates its worker; late responses cannot replace a newer
+  view. Worker failures are visible and never fall back to blocking the UI.
+- Global search and status filters cover the entire loaded projection. At most
+  100 task rows render per page, with visible counts and keyboard/touch paging.
+- Packaged-browser checks exercise strict script CSP, cancellation during a
+  45,000-item scan, complete large-list retrieval, and searching its final task.
+  Revision safety and lost-response regressions remain unchanged.
+
+This removes the observed large-checklist UI freeze. Full production acceptance
+still requires the remaining recovery, mobile/offline, editing, and integration
+milestones above; a worker is not an offline sync engine or a security sandbox.

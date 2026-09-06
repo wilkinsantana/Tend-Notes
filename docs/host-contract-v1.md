@@ -176,8 +176,24 @@ renamed, deleted, or changed source needs refresh; no fuzzy reconciliation is
 performed. Source navigation uses the same snapshot check before selecting the
 checkbox. The current editor is flushed and frozen before entering ToDo.
 
-Scanning is sequential, cancellable between requests, and bounded at 10,000
+Scanning is sequential, cancellable during reads or worker parsing, and bounded at 10,000
 notes and 20 MiB of retained source text. Late scan responses cannot replace a
 newer view. Read failures and resource bounds report partial results. The
 projection is discarded on close/unmount and refreshed explicitly, not persisted
 in extension storage. No new host permission or backend state is required.
+
+
+### Task parsing worker packaging
+
+Notes packages a separate same-origin ES module worker and its shared chunks.
+Every emitted JavaScript asset is included in the extension integrity map and
+third-party license inventory. Runtime URLs are relative to the installed
+extension entry, so the host's existing self-only script policy is sufficient;
+no blob worker, inline script, eval, remote parser, or CSP relaxation is needed.
+
+The worker accepts only extraction and exact checkbox-edit messages, correlated
+by request ID. Closing ToDo terminates it and rejects pending work. Worker
+failure never triggers synchronous parsing on the main thread; reopening ToDo
+creates a fresh worker. Source revisions still belong to the host API, and the
+existing expected-revision save is unchanged. Task paging is presentation only:
+filters run over the complete loaded collection before selecting a page.

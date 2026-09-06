@@ -10,7 +10,10 @@ manifest = json.loads((root / 'extension.json').read_text())
 package = json.loads((root / 'package.json').read_text())
 assert manifest['version'] == package['version'], 'Package and extension versions must match'
 files = {name: (root / name).read_bytes() for name in ['icon.svg', 'LICENSE', 'README.md']}
-files['index.js'] = (root / 'dist/index.js').read_bytes()
+javascript = {path.relative_to(root / 'dist').as_posix(): path.read_bytes() for path in (root / 'dist').rglob('*.js')}
+assert 'index.js' in javascript, 'Missing extension entry: index.js'
+assert 'task-worker.js' in javascript, 'Missing task worker entry: task-worker.js'
+files.update(javascript)
 notices = []
 visited = set()
 def notice(name):

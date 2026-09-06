@@ -1,5 +1,6 @@
 import type { Document, Documents, Library } from './host';
 import { extractTasks, setTaskChecked, type MarkdownTask } from './tasks';
+import type { TaskProcessor } from './taskProcessor';
 
 export interface TaskRow {
   key: string; noteId: string; noteName: string; libraryName: string;
@@ -18,7 +19,12 @@ export class TaskWorkspace {
   private snapshots = new Map<string, Snapshot>();
   private generation = 0;
   constructor(private api: Documents, private changed: (state: TaskState) => void,
-    private limits = { notes: 10000, bytes: 20 * 1024 * 1024 }) {}
+    private limits = { notes: 10000, bytes: 20 * 1024 * 1024 },
+    private processor: TaskProcessor = {
+      async extract(content) { return extractTasks(content); },
+      async setChecked(content, task, checked) { return setTaskChecked(content, task, checked); },
+      dispose() {},
+    }) {}
   private emit() { this.changed({ ...this.state, rows: [...this.state.rows], errors: [...this.state.errors] }); }
   private key(document: Document, task: MarkdownTask) { return JSON.stringify([document.id, document.revision, task.offset]); }
   private rows(snapshot: Snapshot): TaskRow[] {
@@ -26,7 +32,7 @@ export class TaskWorkspace {
       noteName: snapshot.document.name, libraryName: snapshot.library.name, text: task.text,
       checked: task.checked, line: task.line, canWrite: snapshot.library.canCreate }));
   }
-  cancel() { this.generation++; this.snapshots.clear(); this.state = { rows: [], loading: false, scanned: 0, errors: [], busy: false }; }
+  cancel() { this.generation++; this.processor.dispose(); this.snapshots.clear(); this.state = { rows: [], loading: false, scanned: 0, errors: [], busy: false }; }
   async refresh() {
     if (this.state.busy || this.state.loading) return;
     const generation = ++this.generation;
@@ -52,7 +58,8 @@ export class TaskWorkspace {
                 const document = await this.api.read(note.id);
                 if (!active()) return;
                 if (document.id !== note.id || document.libraryId !== library.id) throw new Error('The note moved. Refresh to load its current location.');
-                const tasks = extractTasks(document.content);
+                const tasks = await this.processor.extract(document.content);
+                if (!active()) return;
                 if (tasks.length) {
                   const bytes = new TextEncoder().encode(document.content).length;
                   if (retainedBytes + bytes > this.limits.bytes) throw new Error('This view reached its memory limit. Some tasks are not shown.');
@@ -98,7 +105,7 @@ export class TaskWorkspace {
     try {
       const { snapshot, task } = this.resolve(key);
       if (!snapshot.library.canCreate) throw new Error('This notebook is read-only. Open its note to see the task.');
-      const content = setTaskChecked(snapshot.document.content, task, checked);
+      const content = await this.processor.setChecked(snapshot.document.content, task, checked);
       const latest = await this.api.read(snapshot.document.id);
       if (latest.id !== snapshot.document.id || latest.libraryId !== snapshot.document.libraryId) throw stale();
       // A lost save response may have committed the exact intended bytes. Accept
@@ -110,7 +117,7 @@ export class TaskWorkspace {
         saved = await this.api.save(latest.id, { content, revision: latest.revision });
         if (saved.id !== latest.id || saved.libraryId !== latest.libraryId || saved.content !== content) throw new Error('The task save could not be confirmed. Refresh before trying again.');
       }
-      const next = { ...snapshot, document: saved, tasks: extractTasks(saved.content) };
+      const next = { ...snapshot, document: saved, tasks: await this.processor.extract(saved.content) };
       this.snapshots.set(saved.id, next);
       this.state.rows = this.state.rows.filter(row => row.noteId !== saved.id).concat(this.rows(next));
       return saved;

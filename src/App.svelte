@@ -7,6 +7,7 @@
   import TemplatePicker from './TemplatePicker.svelte';
   import TodoPanel from './TodoPanel.svelte';
   import { TaskWorkspace, type TaskState } from './taskWorkspace';
+  import { WorkerTaskProcessor } from './taskProcessor';
   import type { NoteTemplate } from './templates';
   import MediaDialog from './MediaDialog.svelte';
   import { editMarkdown } from './formatting';
@@ -178,13 +179,14 @@
     try {
       if (!(await ensureSaved())) { error = 'Your open note could not be saved. Keep or recover the draft before opening ToDo.'; return; }
       taskWorkspace?.cancel();
-      const workspace = new TaskWorkspace(host.documents, state => { if (alive && taskWorkspace === workspace) todoState = state; });
+      const workspace = new TaskWorkspace(host.documents, state => { if (alive && taskWorkspace === workspace) todoState = state; }, undefined, new WorkerTaskProcessor());
       taskWorkspace = workspace;
       todoPreviousMobile = mobileEditor;
       todoOpen = true; mobileEditor = true;
       void taskWorkspace.refresh();
       await tick();
-    } finally { opening = false; }
+    } catch (e) { error = message(e); }
+    finally { opening = false; }
   }
   async function closeTodo() {
     if (todoState.busy) return;
