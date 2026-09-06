@@ -158,3 +158,26 @@ it to `0%` for transparent windows and `100%` for solid or reduced-transparency
 mode. Older hosts default to solid Notes surfaces. Menus, dialogs, controls,
 and text retain their own opaque theme colors. Changes apply without remounting
 or interrupting the current draft.
+
+
+### ToDo projection and source identity
+
+The ToDo view uses the existing library/list/read/save contract. Task identity is
+an in-memory tuple of opaque document ID, exact revision, and UTF-16 checkbox
+source offset. Labels are presentation, never identifiers. Parsing follows the
+bundled Markdown lexer's task semantics while preserving original line endings
+and organization headers. Changing a task replaces one marker character.
+
+Before writing, the client rereads the note and requires both the same revision
+and exact original content. Save still supplies the expected revision for the
+host's atomic conflict check. Only an exact whole-document match to intended
+bytes acknowledges a prior lost response without another write. A moved,
+renamed, deleted, or changed source needs refresh; no fuzzy reconciliation is
+performed. Source navigation uses the same snapshot check before selecting the
+checkbox. The current editor is flushed and frozen before entering ToDo.
+
+Scanning is sequential, cancellable between requests, and bounded at 10,000
+notes and 20 MiB of retained source text. Late scan responses cannot replace a
+newer view. Read failures and resource bounds report partial results. The
+projection is discarded on close/unmount and refreshed explicitly, not persisted
+in extension storage. No new host permission or backend state is required.

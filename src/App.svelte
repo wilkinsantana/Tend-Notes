@@ -5,6 +5,8 @@
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import Preview from './Preview.svelte';
   import TemplatePicker from './TemplatePicker.svelte';
+  import TodoPanel from './TodoPanel.svelte';
+  import { TaskWorkspace, type TaskState } from './taskWorkspace';
   import type { NoteTemplate } from './templates';
   import MediaDialog from './MediaDialog.svelte';
   import { editMarkdown } from './formatting';
@@ -40,6 +42,11 @@
   let mobileEditor = $state(false);
   let templateTrigger: HTMLElement | null = null;
   let templatesOpen = $state(false);
+  let todoOpen = $state(false);
+  let todoState = $state<TaskState>({rows: [], loading: false, scanned: 0, errors: [], busy: false});
+  let taskWorkspace: TaskWorkspace | null = null;
+  let todoTrigger: HTMLElement | null = null;
+  let todoPreviousMobile = false;
   let createTemplate = $state('');
   let createOpen = $state(false);
   let createName = $state('');
@@ -115,7 +122,7 @@
     finally { indexing = false; if (alive && libraryId && libraryId !== id) void buildSearch(libraryId); }
   }
   async function refresh() {
-    if (syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind) return;
+    if (todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind) return;
     syncing = true;
     try {
       if (notes.length <= 100) await loadList();
@@ -163,6 +170,52 @@
       if (!(await current.save())) return false;
     }
     return true;
+  }
+  async function openTodo() {
+    if (opening || creating || deleting || actionBusy || !host.documents) return;
+    opening = true; error = '';
+    todoTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    try {
+      if (!(await ensureSaved())) { error = 'Your open note could not be saved. Keep or recover the draft before opening ToDo.'; return; }
+      taskWorkspace?.cancel();
+      const workspace = new TaskWorkspace(host.documents, state => { if (alive && taskWorkspace === workspace) todoState = state; });
+      taskWorkspace = workspace;
+      todoPreviousMobile = mobileEditor;
+      todoOpen = true; mobileEditor = true;
+      void taskWorkspace.refresh();
+      await tick();
+    } finally { opening = false; }
+  }
+  async function closeTodo() {
+    if (todoState.busy) return;
+    taskWorkspace?.cancel(); taskWorkspace = null; todoOpen = false; mobileEditor = todoPreviousMobile;
+    await tick(); todoTrigger?.focus();
+  }
+  async function toggleTask(key: string, checked: boolean) {
+    const saved = await taskWorkspace?.toggle(key, checked);
+    if (alive && saved && session?.view.document.id === saved.id) session.acceptRemote(saved);
+  }
+  async function openTask(key: string) {
+    const result = await taskWorkspace?.open(key);
+    if (!alive || !result) return;
+    const { document: source, task } = result;
+    // ToDo entry flushed and froze the previous editor. Only an exact snapshot
+    // may choose source context; a changed/reordered note requires Refresh.
+    session?.abandon(); connect(source);
+    libraryId = source.libraryId; query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false;
+    taskWorkspace?.cancel(); taskWorkspace = null; todoOpen = false; mode = 'edit';
+    await tick();
+    const body = unpack(source.content).body;
+    const sourcePosition = Math.max(0, task.offset - (source.content.length - body.length));
+    // HTML textareas normalize CRLF/CR; source offsets preserve original bytes.
+    const position = body.slice(0, sourcePosition).replace(/\r\n?/g, '\n').length;
+    editor?.focus(); editor?.setSelectionRange(position, position + 1);
+    if (editor) {
+      const line = body.slice(0, sourcePosition).replace(/\r\n?/g, '\n').split('\n').length;
+      const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 26;
+      editor.scrollTop = Math.max(0, (line - 3) * lineHeight);
+    }
+    await loadList();
   }
   async function changeLibrary(id: string) {
     if (opening || creating || deleting) return;
@@ -416,7 +469,7 @@
   }
   function shortcuts(event: KeyboardEvent) {
     if (!(event.ctrlKey || event.metaKey)) return;
-    if (templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind) return;
+    if (todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind) return;
     if (event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); void quickCapture(); }
     if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
     if (event.target !== editor) return;
@@ -458,18 +511,18 @@
     refreshTimer = setInterval(() => void refresh(), 3000);
     window.addEventListener('beforeunload', leave);
   });
-  onDestroy(() => { alive = false; clearInterval(refreshTimer); clearTimeout(searchTimer); session?.abandon(); window.removeEventListener('beforeunload', leave); });
+  onDestroy(() => { alive = false; taskWorkspace?.cancel(); clearInterval(refreshTimer); clearTimeout(searchTimer); session?.abandon(); window.removeEventListener('beforeunload', leave); });
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- Keyboard shortcuts belong to this extension's focused panel. -->
-<div class="notes-app" class:sidebar-hidden={!sidebar || focusMode} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="TEND Notes" tabindex="-1">
+<div class="notes-app" class:sidebar-hidden={!sidebar || focusMode || todoOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="TEND Notes" tabindex="-1">
   {#if !ready}
     <div class="welcome"><BookOpen size={44}/><h1>TEND Notes</h1><p>Update Tend to use your new notes space.</p><p class="muted">This extension needs Tend’s Documents editing support.</p></div>
   {:else if loading}
     <div class="welcome" role="status"><LoaderCircle class="spin"/><p>Opening your notebooks…</p></div>
   {:else}
-    <aside inert={templatesOpen}>
+    <aside inert={templatesOpen || todoOpen}>
       <div class="brand"><span class="brand-icon"><BookOpen size={20}/></span><div><strong>TEND Notes</strong><small>A little space to think.</small></div></div>
       <div class="library-picker"><div class="notebook-label"><label for="notes-library">NOTEBOOK</label><button class="icon" aria-label="Rename notebook" title="Rename notebook" disabled={!selectedLibrary || actionBusy} onclick={() => beginRename()}><TextCursorInput size={14}/></button></div><select id="notes-library" value={libraryId} onchange={selectLibrary} disabled={!libraries.length || opening}>{#each libraries as library}<option value={library.id}>{library.name}</option>{/each}</select></div>
       <div class="capture-actions" aria-label="Notebook actions">
@@ -478,6 +531,7 @@
         <button class="icon" aria-label="Templates" title="Start from a template" onclick={openTemplates} disabled={!selectedLibrary?.canCreate || opening || creating}><LayoutTemplate size={19}/></button>
         <button class="icon setup-link" aria-label={selectedLibrary?.canCreate ? 'Add notebook' : 'Set up notebook'} title={selectedLibrary?.canCreate ? 'Add notebook' : 'Set up notebook'} disabled={opening} onclick={() => void setupNotebook()}><BookPlus size={20}/></button>
       </div>
+      <button class="quiet todo-entry" onclick={() => void openTodo()} disabled={opening || actionBusy || !libraries.length}><ListTodo size={17}/> ToDo <small>Across notebooks</small></button>
       {#if !mobileEditor && hasLoadedNotes}<button class="quiet continue-writing" disabled={opening} onclick={() => void continueWriting()}><PenLine size={14}/> Continue writing</button>{/if}
       {#if recoveries.length}<button class="quiet recovery-link" onclick={() => void showRecoveries()}>Recovery copies ({recoveries.length})</button>{/if}
       <label class="search"><Search size={15}/><input aria-label="Search your notes" placeholder="Search your notes" bind:value={query} oninput={search}/></label>
@@ -506,6 +560,9 @@
       <div class="sidebar-footer">{#if indexing}<small role="status">Preparing full-text search…</small>{/if}{#if indexError}<small role="status">{indexError}</small>{/if}<button class="quiet" onclick={() => filePicker?.click()} disabled={!selectedLibrary?.canCreate}><Upload size={14}/> Import Markdown</button><button class="quiet" onclick={() => backupOpen = true}><Download size={14}/> Export & backups</button><small>Yours to keep. Plain Markdown.</small></div>
     </aside>
     <main inert={templatesOpen}>
+      {#if todoOpen}
+        <TodoPanel rows={todoState.rows} loading={todoState.loading} scanned={todoState.scanned} errors={todoState.errors} busy={todoState.busy} ontoggle={(key, checked) => void toggleTask(key, checked)} onopen={key => void openTask(key)} onrefresh={() => void taskWorkspace?.refresh()} onclose={() => void closeTodo()}/>
+      {:else}
       <header><button class="icon desktop-toggle" onclick={() => sidebar = !sidebar} aria-label={sidebar ? 'Hide notebooks' : 'Show notebooks'} title={sidebar ? 'Hide notebooks' : 'Show notebooks'}>{#if sidebar}<PanelLeftClose size={18}/>{:else}<PanelLeftOpen size={18}/>{/if}</button><button class="icon mobile-back" onclick={() => mobileEditor = false} aria-label="Back to notes"><ArrowLeft size={18}/></button><div class="breadcrumb">{#if view}<button class="note-title" aria-label="Rename current note" title="Rename note" onclick={() => beginRename(view!.document)}><h1>{title(view.document.name)}</h1></button>{:else}{selectedLibrary?.name ?? 'Your notes'}{/if}</div>{#if view}{#if quickCaptureTitle && host.documents?.rename}<button class="suggest-title" aria-label="Use first line as title" title={`Use “${quickCaptureTitle}” as title`} onclick={useFirstLineAsTitle}><TextCursorInput size={14}/><span>Use first line as title</span></button>{/if}<button class="icon focus-toggle" aria-label={focusMode ? "Exit focus mode" : "Focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} onclick={() => { focusMode = !focusMode; mode = "edit"; }}>{#if focusMode}<Minimize size={16}/>{:else}<Maximize size={16}/>{/if}</button><div class="document-actions"><button class="icon" class:chosen={parsed.organization.pinned} aria-label={parsed.organization.pinned ? "Unpin note" : "Pin note"} aria-pressed={parsed.organization.pinned} title={parsed.organization.pinned ? "Unpin note" : "Pin note"} onclick={() => organize({pinned: !parsed.organization.pinned})}><Pin size={16}/></button><button class="icon" aria-label="Organize note" title="Tags and color" aria-expanded={organizeOpen} onclick={() => organizeOpen = !organizeOpen}><Tag size={16}/></button><button class="icon" aria-label="Export Markdown" title="Export Markdown" onclick={() => download(view!.content, view!.document.name)}><Download size={17}/></button><button class="icon" aria-label="Delete note" title="Delete note" onclick={() => beginDelete(view!.document)}><Trash2 size={16}/></button></div><div class="view-modes" aria-label="Editor view"><button class:active={mode === 'edit'} class="icon" aria-label="Edit Markdown" title="Edit Markdown" onclick={() => mode = 'edit'}><PenLine size={16}/></button><button class:active={mode === 'split'} class="icon split-button" aria-label="Split view" title="Split view" aria-pressed={mode === 'split'} onclick={() => mode = mode === 'split' ? 'edit' : 'split'}><Columns2 size={16}/></button><button class:active={mode === 'preview'} class="icon" aria-label="Preview" title="Preview" onclick={() => mode = 'preview'}><Eye size={17}/></button></div>{/if}</header>
       {#if error}<div class="notice error" role="alert">{error}<button class="icon" aria-label="Dismiss message" onclick={() => error = ''}><X size={15}/></button></div>{/if}
       {#if recoveries.length && !view}
@@ -542,6 +599,7 @@
       {:else}
         <div class="welcome"><span class="welcome-icon"><BookOpen size={37} strokeWidth={1.4}/></span><span class="eyebrow">YOUR OWN QUIET CORNER</span>{#if !libraries.length}<h1>Make room for an idea.</h1><p>Tend prepares a protected home for your notes on your server. Start writing, then choose a backup destination whenever you’re ready.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}><FolderOpen size={17}/> Set up your notebook</button>{:else if hasLoadedNotes}<h1>Pick up where you left off.</h1><p>Return to a recent note, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => void continueWriting()}><PenLine size={17}/> Continue writing</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if facets.total > 0}<h1>No notes match these filters.</h1><p>Clear the filters to continue writing, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => { query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; void loadList(); }}>Clear filters</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if !selectedLibrary?.canCreate}<h1>Make room for an idea.</h1><p>Choose a connected notebook or let Tend prepare a new one to start writing.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}>Set up your notebook</button>{:else}<h1>Make room for an idea.</h1><p>A quick thought. A plan taking shape. Something worth remembering.<br/>Keep it here, in your own words.</p><button class="primary" onclick={() => beginCreate()}><Plus size={17}/> Write your first note</button><button class="quiet" onclick={() => filePicker?.click()}><Upload size={14}/> Bring a Markdown file</button>{/if}<small>Simple to write. Easy to take with you.</small></div>
       {/if}
+      {/if}
     </main>
     <input class="hidden" bind:this={filePicker} type="file" accept=".md,.markdown,text/markdown" onchange={importFile}/>
   {/if}
@@ -561,6 +619,7 @@
 </div>
 
 <style>
+  .todo-entry{margin-top:12px; color:var(--accent)}.todo-entry small{font-size:10px;color:var(--soft);margin-left:auto}
   .notes-app{--paper:var(--color-base-100,#151b19);--ink:var(--color-base-content,#d8e3df);--wash:var(--color-base-200,#1d2622);--line:color-mix(in srgb,var(--ink) 10%,transparent);--soft:color-mix(in srgb,var(--ink) 54%,transparent);--accent:var(--color-primary,#66b798);--accent-ink:var(--color-primary-content,#071a13);--warning:var(--color-warning,#d7ac64);--danger:var(--color-error,#dc7777);--danger-ink:var(--color-error-content,#250c0c);height:100%;min-height:360px;display:grid;grid-template-columns:254px minmax(0,1fr);color:var(--ink);background:color-mix(in srgb,var(--paper) var(--tend-panel-surface-alpha,100%),transparent);font:14px/1.5 var(--font-sans,system-ui,sans-serif);position:relative;container-type:inline-size;overflow:hidden;text-align:left}
   .notes-app :global(*){box-sizing:border-box}.notes-app :global(button),.notes-app :global(input),.notes-app :global(select),.notes-app :global(textarea){font:inherit}.notes-app :global(button){cursor:pointer}.notes-app :global(button:disabled){opacity:.45;cursor:default}.notes-app :global(button:focus-visible),.notes-app :global(input:focus-visible),.notes-app :global(select:focus-visible),.notes-app :global(a:focus-visible){outline:2px solid var(--accent);outline-offset:3px}.notes-app :global(button){color:inherit}.notes-app :global(h1),.notes-app :global(h2),.notes-app :global(p){margin:0}
   aside{background:color-mix(in srgb,color-mix(in srgb,var(--wash) 70%,var(--paper)) var(--tend-panel-surface-alpha,100%),transparent);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;padding:28px 16px 18px;overflow:auto}.brand{display:flex;align-items:center;gap:11px;margin:0 8px 28px}.brand-icon{display:grid;place-items:center;width:38px;height:42px;border-radius:12px;background:var(--accent);color:var(--accent-ink)}.brand strong{display:block;font-size:16px;letter-spacing:-.4px}.brand small{display:block;color:var(--soft);font-size:10px;margin-top:2px}.library-picker{padding:0 8px;margin-bottom:16px}.library-picker label,.list-heading{font-size:10px;font-weight:600;letter-spacing:1.3px;color:var(--soft)}select option{background:var(--wash);color:var(--ink)}select{width:100%;border:0;background:transparent;color:var(--ink);margin-top:5px;padding:2px 0}.primary,.danger{display:inline-flex;justify-content:center;align-items:center;gap:9px;border:0;border-radius:9px;background:var(--accent);color:var(--accent-ink)!important;padding:10px 16px;font-weight:550;text-decoration:none;font-size:13px;box-shadow:0 2px 3px #00000008}.new-note{width:100%;justify-content:flex-start}.search{display:flex;align-items:center;gap:9px;color:var(--soft);padding:10px 8px;margin-top:14px}.search input{background:none;border:0;outline:0!important;width:100%;font-size:12px;color:var(--ink)}.search input::placeholder{color:var(--soft)}.list-heading{display:flex;align-items:center;justify-content:space-between;margin:17px 8px 8px}.note-list{overflow:auto;flex:1;min-height:84px}.note{display:flex;align-items:center;gap:10px;padding:12px;width:100%;border:1px solid transparent;background:none;border-radius:9px;text-align:left;margin-bottom:4px}.note>span{min-width:0}.note strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:550}.note small{display:block;font-size:10px;color:var(--soft);margin-top:3px}.note> :global(svg){flex-shrink:0;color:var(--soft)}.note.selected{background:var(--paper);border-color:var(--line);box-shadow:0 2px 6px #00000004}.note.selected> :global(svg){color:var(--accent)}.note:hover{background:color-mix(in srgb,var(--paper) 70%,transparent)}.sidebar-footer{padding-top:18px;border-top:1px solid var(--line);margin-top:20px}.sidebar-footer>small{font-size:10px;color:var(--soft);display:block;padding-left:8px;margin-top:8px}.quiet{display:inline-flex;gap:8px;align-items:center;border:0;background:transparent;padding:7px 8px;border-radius:6px;font-size:12px}.quiet:hover,.icon:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}.list-empty{padding:25px 12px;color:var(--soft);font-size:11px;text-align:center}.list-empty :global(svg){margin:auto auto 10px}.more{width:100%;justify-content:center}.hidden{display:none}

@@ -82,8 +82,30 @@ dialog creates no note. If the current draft cannot be saved, template creation
 stops so you can resolve it first. Templates use ordinary Markdown checkboxes
 and require no extra account, storage setup, or template service.
 
-This release includes built-in templates. Saving your own templates and a ToDo
-view across notes are planned; they are not yet available.
+This release includes built-in templates. Saving your own templates is planned.
+
+## Notes and ToDo together
+
+Choose **ToDo · Across notebooks** to gather Markdown checkboxes from every
+connected notebook. Search task text, note names, or notebook names, and switch
+between Open, Completed, and All. **Open note** takes you to the exact checkbox
+in its original Markdown. Grocery lists and meeting action items use this same
+view; there is no separate task store or task account.
+
+Checking an item updates just that checkbox in the original note. Completion
+appears after the save is confirmed. If a note changes elsewhere, refresh the
+task list before trying again. Identical labels remain separate tasks. A failed
+save keeps the last confirmed state visible, and opening ToDo first saves your
+current draft; a failed draft save keeps you in the editor.
+
+The view scans saved notes when opened or refreshed. It does not scan hidden
+code examples as tasks, and read-only notebooks remain viewable. Disconnected
+sources and partial results are shown explicitly. A scan can be cancelled by
+returning to Notes. Very large collections are bounded at 10,000 scanned notes
+and 20 MiB of retained task-bearing Markdown per view, with a visible incomplete
+result if reached. This is an online snapshot; refresh after editing in another
+session. Due dates, reminders, recurrence, and offline task updates are future
+milestones.
 
 ## Organize without a filing chore
 

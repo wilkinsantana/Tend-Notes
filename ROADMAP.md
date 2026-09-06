@@ -84,11 +84,12 @@ development; they are not claims of published availability.
   previews lead to ordinary Markdown copies with distinct suggested names.
 - [ ] **Today and personal templates:** daily-note entry and saving user-defined
   templates without erasing earlier notes or history.
-- [ ] **ToDo within Notes:** collect the same Markdown checkboxes across notes
-  and notebooks. Open each item's source context; checking it in either view
-  updates that same item with revision/conflict protection. Define stable item
-  identity before cross-note editing. Optional dates, reminders, and recurrence
-  require explicit portable semantics; prose does not schedule notifications.
+- [x] **ToDo within Notes** (implemented in 0.4.0): gather the same Markdown
+  checkboxes across notebooks, search/filter tasks, and open source context.
+  Completion updates the original note through exact revision and source
+  position identity; changed notes require refresh rather than fuzzy matching.
+- [ ] **Task scheduling:** optional dates, reminders, and recurrence require
+  explicit portable semantics; prose does not schedule notifications.
 - [ ] **Bring and reuse information:** previewed Markdown/ZIP imports including
   attachments, optional PDF/OCR/audio search, selected-note read-only sharing,
   and deliberate Sites publication through reviewed host contracts.
@@ -121,5 +122,18 @@ Tend extension update before it is available to installed users.
   transparency are covered by interaction tests.
 
 Installation remains manual after the verified release reaches the official
-Tend catalog. ToDo across notes, personal templates, Trash/history, and offline
-PWA synchronization remain separate approved milestones.
+Tend catalog. Personal templates, Trash/history, and offline PWA synchronization remain
+separate approved milestones. ToDo is delivered in the following milestone.
+
+
+## 0.4.0 — ToDo belongs in Notes
+
+- An all-notebook ToDo view gathers saved Markdown checkboxes with search and
+  Open, Completed, and All filters. Open note selects the original checkbox.
+- Writes preserve every other source character, and never guess task identity
+  from a label. Remote changes, lost responses, and partial scans remain visible.
+- Opening the view confirms current draft saves. Read-only sources, cancelled
+  scans, narrow layouts, and keyboard navigation have regression coverage.
+- No additional permission, account, schema, task database, or proprietary
+  metadata is introduced. Task scheduling, recovery/history, and the Notes PWA
+  remain approved unfinished work.
