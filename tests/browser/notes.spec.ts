@@ -36,6 +36,90 @@ test('narrow panel and onboarding handoff', async ({page}) => {
   await expect(page.getByRole('link',{name:'Open Files'})).toHaveCount(0);
 });
 
+test('a populated notebook continues the most recently modified loaded note in wide and narrow panels', async ({page}) => {
+  await page.addInitScript(()=>localStorage.setItem('tend-notes:demo-documents',JSON.stringify([
+    {id:'older',libraryId:'personal',name:'Alpha.md',modifiedAt:10,size:12,content:'# Older note',revision:'older'},
+    {id:'recent',libraryId:'personal',name:'Zulu.md',modifiedAt:20,size:13,content:'# Recent note',revision:'recent'},
+  ])));
+  await page.setViewportSize({width:1100,height:800}); await page.goto('/');
+  await expect(page.locator('.welcome').getByRole('button',{name:'Continue writing',exact:true})).toBeVisible();
+  await page.getByLabel('Sort notes').selectOption('title');
+  await page.locator('.welcome').getByRole('button',{name:'Continue writing',exact:true}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  await expect(editor).toHaveValue('# Recent note'); await expect(editor).toBeFocused();
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await page.setViewportSize({width:390,height:780}); await page.getByRole('button',{name:'Back to notes'}).click();
+  await page.locator('.continue-writing').click();
+  await expect(editor).toHaveValue('# Recent note'); await expect(editor).toBeFocused();
+});
+
+test('an empty active notebook keeps the first-note welcome', async ({page}) => {
+  await page.addInitScript(()=>localStorage.setItem('tend-notes:demo-documents','[]'));
+  await page.goto('/');
+  const welcome=page.locator('.welcome');
+  await expect(welcome.getByRole('button',{name:'Write your first note',exact:true})).toBeVisible();
+  await expect(welcome.getByRole('button',{name:'Continue writing',exact:true})).toHaveCount(0);
+  await expect(welcome.getByRole('button',{name:'Quick capture',exact:true})).toHaveCount(0);
+});
+
+test('an empty filtered list does not mistake a populated notebook for first-note onboarding', async ({page}) => {
+  await page.goto('/'); await page.getByRole('textbox',{name:'Search your notes'}).fill('not a saved note');
+  const welcome=page.locator('.welcome');
+  await expect(welcome.getByText('No notes match these filters.')).toBeVisible();
+  await expect(welcome.getByRole('button',{name:'Write your first note',exact:true})).toHaveCount(0);
+  await welcome.getByRole('button',{name:'Clear filters',exact:true}).click();
+  await expect(welcome.getByRole('button',{name:'Continue writing',exact:true})).toBeVisible();
+});
+
+test('quick capture focuses an untitled editor from its welcome action and shortcut, then survives reload', async ({page}) => {
+  await page.goto('/');
+  await page.locator('.welcome').getByRole('button',{name:'Quick capture',exact:true}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  await expect(editor).toBeFocused(); await expect(page.getByRole('dialog')).toHaveCount(0);
+  await editor.fill('A captured thought'); await expect(page.getByRole('button',{name:'All changes saved',exact:true})).toBeVisible();
+  await page.evaluate(()=>{const docs=JSON.parse(localStorage.getItem('tend-notes:demo-documents')!); docs[0].modifiedAt=0; localStorage.setItem('tend-notes:demo-documents',JSON.stringify(docs));});
+  await page.reload(); await page.locator('.welcome').getByRole('button',{name:'Continue writing',exact:true}).click();
+  await expect(editor).toHaveValue('A captured thought');
+  await page.getByRole('region',{name:'TEND Notes'}).focus(); await page.keyboard.press('Control+Shift+N');
+  await expect(editor).toBeFocused(); await expect(editor).toHaveValue('');
+});
+
+test('a quick capture can use its first line as a title after autosave without changing its writing', async ({page}) => {
+  await page.goto('/'); await page.locator('.welcome').getByRole('button',{name:'Quick capture',exact:true}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  await editor.fill('## A durable title\n\nThis saved body stays exactly as written.');
+  await expect(page.getByRole('button',{name:'All changes saved',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Use first line as title',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Rename note',exact:true});
+  await expect(dialog.getByLabel('Note name',{exact:true})).toHaveValue('A durable title');
+  await dialog.getByRole('button',{name:'Save name',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'A durable title',exact:true})).toBeVisible();
+  await expect(editor).toHaveValue('## A durable title\n\nThis saved body stays exactly as written.');
+  await expect(page.getByRole('button',{name:'All changes saved',exact:true})).toBeVisible();
+});
+
+test('a quick capture offers a sanitized first-line title without risking content on a conflicting rename', async ({page}) => {
+  await page.setViewportSize({width:390,height:780}); await page.goto('/'); await page.getByRole('complementary').getByRole('button',{name:'Quick capture',exact:true}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  await editor.fill('#  Local title stays as writing\n\nThe body must stay put.');
+  await expect(page.getByRole('button',{name:'All changes saved',exact:true})).toBeVisible();
+  const suggestion=page.getByRole('button',{name:'Use first line as title',exact:true});
+  await expect(suggestion).toBeVisible();
+  expect(await page.locator('header').evaluate(header=>header.scrollWidth<=header.clientWidth+1)).toBe(true);
+  await page.evaluate(async()=>{
+    const key='tend-notes:demo-documents'; const docs=JSON.parse(localStorage.getItem(key)!);
+    const note=docs.at(-1); note.content='Remote title';
+    note.revision=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(note.content)))].map(value=>value.toString(16).padStart(2,'0')).join('');
+    localStorage.setItem(key,JSON.stringify(docs));
+  });
+  await suggestion.click();
+  const dialog=page.getByRole('dialog',{name:'Rename note',exact:true});
+  await expect(dialog.getByLabel('Note name',{exact:true})).toHaveValue('Local title stays as writing');
+  await dialog.getByRole('button',{name:'Save name',exact:true}).click();
+  await expect(dialog.getByRole('alert')).toContainText('changed elsewhere');
+  await expect(editor).toHaveValue('#  Local title stays as writing\n\nThe body must stay put.');
+});
+
 test('a failed save cannot switch away from an editable draft', async ({page}) => {
   await page.goto('/');
   await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
@@ -106,7 +190,10 @@ test('an unsaved browser recovery copy survives a reload', async ({page}) => {
 
 test('narrow existing notebook exposes setup and recovery entries', async ({page}) => {
   await page.setViewportSize({width:390,height:780}); await page.goto('/?unconnected');
-  await expect(page.getByRole('button',{name:'Set up notebook',exact:true})).toBeVisible();
+  await expect(page.locator('.continue-writing')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Quick capture',exact:true})).toBeDisabled();
+  await page.locator('.continue-writing').click();
+  await expect(page.getByRole('textbox',{name:'Note Markdown'})).toBeVisible();
   await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
   await page.evaluate(()=>{(window as any).notesDemo.saveFails=true;});
   await page.getByRole('textbox',{name:'Note Markdown'}).fill('Narrow recovery');

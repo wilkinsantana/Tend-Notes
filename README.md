@@ -54,6 +54,12 @@ Tend account and tab; they are not a backup or cross-device synchronization.
 The saved Markdown file is authoritative. Deleting a note deletes its original
 file after a confirmation showing its title, with Cancel and Delete buttons. No title typing is required. Keep your normal storage backups.
 
+When a notebook already has notes, **Continue writing** opens the most recently
+modified note in the loaded list. **Quick capture** opens a blank editor without
+a naming dialog; the shortcut is Ctrl/Cmd+Shift+N. After writing, **Use first
+line as title** suggests a name you can review before saving. It uses the same
+conflict protection as an ordinary rename and never replaces another note.
+
 Preview supports common Markdown, lists, code, and tables. Embedded HTML is
 displayed safely; external images load only after a click. Links open only after you
 click them. No external writing service, tracking, or AI account is required.
