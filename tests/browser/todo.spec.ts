@@ -89,7 +89,8 @@ test('ToDo uses per-note editing permission independently of notebook creation',
   await page.goto('/?unconnected');await enter(page);
   const allowed=page.getByRole('checkbox',{name:'Mark complete: Allowed'});
   await expect(allowed).toBeEnabled();await allowed.click();
-  expect((await docs(page))[0].content).toBe('- [x] Allowed\n');
+  await expect(allowed).toHaveCount(0);
+  await expect.poll(async()=>(await docs(page))[0].content).toBe('- [x] Allowed\n');
 
   await page.evaluate(async()=>{const items=JSON.parse(localStorage.getItem('tend-notes:demo-documents')!);items[0].content='- [ ] Blocked\n';items[0].canWrite=false;const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(items[0].content));items[0].revision=[...new Uint8Array(hash)].map(n=>n.toString(16).padStart(2,'0')).join('');localStorage.setItem('tend-notes:demo-documents',JSON.stringify(items));});
   await page.goto('/');await enter(page);
