@@ -80,6 +80,13 @@ export class NoteSession {
     if (this.view.dirty || this.view.saving || document.id !== this.view.document.id) return false;
     this.view.document = document; this.view.content = document.content; this.view.error = ''; this.emit(); return true;
   }
+  retainAfterDeletion() {
+    this.disposed = true; clearTimeout(this.timer);
+    this.view.conflict = true;
+    this.view.error = 'This note was moved to Trash. Your newer draft is still here: export it or save it as a new note.';
+    if (this.view.dirty) this.recoverable();
+    this.emit();
+  }
   abandon() { this.disposed = true; clearTimeout(this.timer); }
   async dispose() { this.disposed = true; clearTimeout(this.timer); return this.save(); }
 }

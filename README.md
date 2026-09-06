@@ -52,8 +52,14 @@ The editor saves after a short pause. If a note changes in another Tend window,
 it keeps your draft and offers **Export draft**, **Save as new note**, or
 **Reload saved version**. Recovery copies live in this browser, scoped to your
 Tend account and tab; they are not a backup or cross-device synchronization.
-The saved Markdown file is authoritative. Deleting a note deletes its original
-file after a confirmation showing its title, with Cancel and Delete buttons. No title typing is required. Keep your normal storage backups.
+The saved Markdown file is authoritative. On a host with Trash support, deleting
+a note offers **Move to Trash**. Open **Trash** in the sidebar to restore it,
+choose another name if occupied, or permanently delete it with a normal
+confirmation. No title typing is required. Notes remain there until explicitly
+purged; Trash is not included in Notes backups yet. Keep your normal backups.
+Older hosts without this capability explicitly confirm permanent deletion.
+Uncertain actions keep the same request and offer status/retry rather than
+claiming the operation succeeded.
 
 When a notebook already has notes, **Continue writing** opens the most recently
 modified note in the loaded list. **Quick capture** opens a blank editor without

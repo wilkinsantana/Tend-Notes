@@ -65,3 +65,15 @@ describe('confirmed saves and recovery', () => {
     expect(await session.dispose()).toBe(true); expect(session.view.dirty).toBe(false);
   });
 });
+
+test('confirmed deletion retains a newer draft and never saves it back to a removed note', async () => {
+  let writes = 0;
+  const {session, drafts} = setup(async () => { writes++; return document; });
+  session.edit('Newer writing after the deletion request');
+  session.retainAfterDeletion();
+  expect(session.view.dirty).toBe(true);
+  expect(session.view.conflict).toBe(true);
+  expect(drafts.list()[0].content).toBe('Newer writing after the deletion request');
+  expect(await session.dispose()).toBe(false);
+  expect(writes).toBe(0);
+});

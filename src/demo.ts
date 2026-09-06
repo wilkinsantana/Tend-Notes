@@ -1,5 +1,6 @@
 /** Development-only host. This entry is excluded from the extension package. */
 import { activate } from './index';
+import { demoTrash } from './demoTrash';
 import { demoStorageSetup } from './demoSetup';
 import { unpack } from './organization';
 import type { Document, Host, BackupState } from './host';
@@ -8,7 +9,7 @@ const renamedLibraries = new Map<string,string>();
 const attachments = new Map<string,Blob>();
 const extraLibraries: Array<{id: string; name: string; canCreate: boolean}> = [];
 const extraDestinations: Array<{id: string; name: string; provider: string}> = [];
-const state = { readDelay: 0, saveDelay: 0, saveFails: false, backupFixture: false };
+const state = { readDelay: 0, saveDelay: 0, saveFails: false, backupFixture: false, trashLoseResponse: false, trashBeforeSend: false };
 let demoBackups: BackupState = {schedule:{destination_source_id:'',interval_minutes:0,next_run_at:null},jobs:[]};
 Object.assign(window, { notesDemo: state });
 const revision = async (content: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content)))].map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -46,4 +47,6 @@ const host: Host = { id:'host.tend.notes',user:{id:'demo-user',name:'You',role:'
   async save(id,input){if(state.saveDelay)await new Promise(r=>setTimeout(r,state.saveDelay));if(state.saveFails) throw new Error('Demo connection interrupted');const all=get(),at=all.findIndex(d=>d.id===id);if(at<0)throw new Error('Note not found');if(all[at].revision!==input.revision&&all[at].content!==input.content)throw Object.assign(new Error('This note changed elsewhere. Keep your draft or reload the saved version.'),{status:409});all[at]={...all[at],content:input.content,revision:await revision(input.content),modifiedAt:Math.floor(Date.now()/1000),size:input.content.length};put(all);return all[at];},
   async delete(id,rev){const all=get(),d=all.find(d=>d.id===id);if(d?.revision!==rev)throw Object.assign(new Error('This note changed elsewhere.'),{status:409});put(all.filter(d=>d.id!==id));},
 }};
+if (new URLSearchParams(location.search).has('trash')) host.documents!.trash = demoTrash(get, put, state);
+if (new URLSearchParams(location.search).has('future-trash') && host.documents?.trash) Object.assign(host.documents.trash, {version: 2});
 activate(host).mount(document.querySelector('#app')!);

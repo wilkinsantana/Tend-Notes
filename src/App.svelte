@@ -6,6 +6,7 @@
   import Preview from './Preview.svelte';
   import TemplatePicker from './TemplatePicker.svelte';
   import TodoPanel from './TodoPanel.svelte';
+  import TrashPanel from './TrashPanel.svelte';
   import { TaskWorkspace, type TaskState } from './taskWorkspace';
   import { WorkerTaskProcessor } from './taskProcessor';
   import type { NoteTemplate } from './templates';
@@ -44,6 +45,19 @@
   let templateTrigger: HTMLElement | null = null;
   let templatesOpen = $state(false);
   let todoOpen = $state(false);
+  let trashOpen = $state(false);
+  let trashTrigger: HTMLElement | null = null;
+  let deleteRequest = $state<{documentId: string; revision: string; operationId: string} | null>(null);
+  let deletePending = $state(false);
+  async function openTrash() {
+    if (!host.documents?.trash || !(await ensureSaved())) return;
+    trashTrigger = document.activeElement as HTMLElement | null;
+    taskWorkspace?.cancel(); todoOpen = false; trashOpen = true; mobileEditor = true;
+  }
+  async function closeTrash() {
+    trashOpen = false; mobileEditor = !!view;
+    await loadList(); await tick(); trashTrigger?.focus();
+  }
   let todoState = $state<TaskState>({rows: [], loading: false, scanned: 0, errors: [], busy: false});
   let taskWorkspace: TaskWorkspace | null = null;
   let todoTrigger: HTMLElement | null = null;
@@ -76,6 +90,8 @@
   let sequence = 0;
   let searchTimer: ReturnType<typeof setTimeout>;
   const ready = $derived(host.documents?.version === 1 && !!host.user);
+  const trashSupported = $derived(host.documents?.trash?.version === 1);
+  const deletionUncertain = $derived(deletePending && deleteRequest?.documentId === view?.document.id);
   const selectedLibrary = $derived(libraries.find(l => l.id === libraryId));
   const parsed = $derived(unpack(view?.content ?? ''));
   const hasLoadedNotes = $derived(notes.length > 0);
@@ -123,7 +139,7 @@
     finally { indexing = false; if (alive && libraryId && libraryId !== id) void buildSearch(libraryId); }
   }
   async function refresh() {
-    if (todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind) return;
+    if (trashOpen || todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind) return;
     syncing = true;
     try {
       if (notes.length <= 100) await loadList();
@@ -239,7 +255,7 @@
     finally { opening = false; }
   }
   function organize(changes: Partial<Organization>) {
-    if (!view || opening || creating || deleting) return;
+    if (!view || opening || creating || deleting || deletionUncertain) return;
     try {
       const content = withOrganization(view.content, changes);
       session?.edit(content);
@@ -363,7 +379,7 @@
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  function beginDelete(note: Note) { actionNote = note; actionError = ''; deleteOpen = true; }
+  function beginDelete(note: Note) { if (actionNote?.id !== note.id) { deleteRequest = null; deletePending = false; } actionNote = note; actionError = ''; deleteOpen = true; }
   function beginRename(note?: Note) {
     actionNote = note ?? null; renameName = note ? title(note.name) : selectedLibrary?.name ?? '';
     actionError = ''; renameOpen = note ? 'note' : 'notebook';
@@ -405,17 +421,47 @@
     } catch(e) { error = message(e); }
     finally { actionBusy = false; }
   }
-  async function remove() {
+  async function remove(checkOnly = false) {
     if (!actionNote || !host.documents || !deleteOpen || deleting) return;
     deleting = true; actionError = '';
     try {
       const selected = view?.document.id === actionNote.id;
-      if (selected && !(await ensureSaved())) return;
-      const current = selected ? view!.document : await host.documents.read(actionNote.id);
-      await host.documents.delete(current.id, current.revision);
-      if (selected) { session?.abandon(); session = null; view = null; mobileEditor = false; }
-      drafts.remove(current.id); deleteOpen = false; refreshDrafts(); await loadList();
-    } catch (e) { actionError = message(e); }
+      if (selected && !deletePending && !(await ensureSaved())) return;
+      const trash = host.documents.trash;
+      if (trash && trash.version !== 1) throw new Error('Update Notes to use this version of Tend’s recovery support.');
+      if (trash?.version === 1) {
+        if (!deleteRequest) {
+          const current = selected ? view!.document : await host.documents.read(actionNote.id);
+          deleteRequest = {documentId: current.id, revision: current.revision, operationId: crypto.randomUUID()};
+        }
+        const result = deletePending
+          ? await (checkOnly ? trash.status(deleteRequest.operationId) : trash.move(deleteRequest))
+          : await trash.move(deleteRequest);
+        if (result.state === 'pending') {
+          deletePending = true;
+          actionError = 'Tend is still confirming this move. Check its status or retry the same request. Your recovery copy will appear in Trash.';
+          return;
+        }
+        deletePending = false;
+        if (result.state === 'failed') {
+          deleteRequest = null;
+          actionError = result.error?.message ?? 'This note could not be moved to Trash. Refresh and try again.';
+          return;
+        }
+      } else {
+        const current = selected ? view!.document : await host.documents.read(actionNote.id);
+        await host.documents.delete(current.id, current.revision);
+      }
+      const newerDraft = selected && !!session?.view.dirty;
+      if (newerDraft) session?.retainAfterDeletion();
+      else if (selected) { session?.abandon(); session = null; view = null; mobileEditor = false; }
+      if (!newerDraft) drafts.remove(actionNote.id); deleteRequest = null; deleteOpen = false; refreshDrafts(); await loadList();
+    } catch (e) {
+      const status = (e as {status?: number})?.status;
+      if (deleteRequest && (!status || status >= 500)) deletePending = true;
+      else if (!deletePending) deleteRequest = null;
+      actionError = message(e);
+    }
     finally { deleting = false; }
   }
   async function reload() {
@@ -427,7 +473,7 @@
     } catch (e) { error = message(e); reloadOpen = false; }
   }
   function format(before: string, after = '', prefix = false) {
-    if (!view || !editor || opening || creating || deleting || actionBusy) return;
+    if (!view || !editor || opening || creating || deleting || actionBusy || deletionUncertain) return;
     const result = editMarkdown(parsed.body, editor.selectionStart, editor.selectionEnd, before, after, prefix);
     session?.edit(withBody(view.content, result.content));
     void tick().then(() => { editor?.focus(); editor?.setSelectionRange(result.start, result.end); });
@@ -459,7 +505,7 @@
     if (edit) { event.preventDefault(); applyNewline(edit); }
   }
   function openMedia(kind: 'image' | 'youtube' | 'audio') {
-    if (!view) return;
+    if (!view || deletionUncertain) return;
     mediaTarget = {id: view.document.id, content: view.content, start: editor?.selectionStart ?? parsed.body.length, end: editor?.selectionEnd ?? parsed.body.length};
     mediaKind = kind;
   }
@@ -471,7 +517,7 @@
   }
   function shortcuts(event: KeyboardEvent) {
     if (!(event.ctrlKey || event.metaKey)) return;
-    if (todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind) return;
+    if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind) return;
     if (event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); void quickCapture(); }
     if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
     if (event.target !== editor) return;
@@ -518,7 +564,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- Keyboard shortcuts belong to this extension's focused panel. -->
-<div class="notes-app" class:sidebar-hidden={!sidebar || focusMode || todoOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="TEND Notes" tabindex="-1">
+<div class="notes-app" class:sidebar-hidden={!sidebar || focusMode || todoOpen || trashOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="TEND Notes" tabindex="-1">
   {#if !ready}
     <div class="welcome"><BookOpen size={44}/><h1>TEND Notes</h1><p>Update Tend to use your new notes space.</p><p class="muted">This extension needs Tend’s Documents editing support.</p></div>
   {:else if loading}
@@ -559,10 +605,12 @@
         {/each}
         {#if nextOffset !== null}<button class="quiet more" onclick={() => void loadList(true)} disabled={listLoading}>Load more notes</button>{/if}
       </div>
-      <div class="sidebar-footer">{#if indexing}<small role="status">Preparing full-text search…</small>{/if}{#if indexError}<small role="status">{indexError}</small>{/if}<button class="quiet" onclick={() => filePicker?.click()} disabled={!selectedLibrary?.canCreate}><Upload size={14}/> Import Markdown</button><button class="quiet" onclick={() => backupOpen = true}><Download size={14}/> Export & backups</button><small>Yours to keep. Plain Markdown.</small></div>
+      <div class="sidebar-footer">{#if indexing}<small role="status">Preparing full-text search…</small>{/if}{#if indexError}<small role="status">{indexError}</small>{/if}<button class="quiet" onclick={() => filePicker?.click()} disabled={!selectedLibrary?.canCreate}><Upload size={14}/> Import Markdown</button>{#if host.documents?.trash?.version === 1}<button class="quiet" onclick={() => void openTrash()} disabled={opening || actionBusy}><Trash2 size={14}/> Trash</button>{/if}<button class="quiet" onclick={() => backupOpen = true}><Download size={14}/> Export & backups</button><small>Yours to keep. Plain Markdown.</small></div>
     </aside>
     <main inert={templatesOpen}>
-      {#if todoOpen}
+      {#if trashOpen && host.documents?.trash}
+        <TrashPanel api={host.documents.trash} onclose={() => void closeTrash()} onchange={() => void loadList()}/>
+      {:else if todoOpen}
         <TodoPanel rows={todoState.rows} loading={todoState.loading} scanned={todoState.scanned} errors={todoState.errors} busy={todoState.busy} ontoggle={(key, checked) => void toggleTask(key, checked)} onopen={key => void openTask(key)} onrefresh={() => void taskWorkspace?.refresh()} onclose={() => void closeTodo()}/>
       {:else}
       <header><button class="icon desktop-toggle" onclick={() => sidebar = !sidebar} aria-label={sidebar ? 'Hide notebooks' : 'Show notebooks'} title={sidebar ? 'Hide notebooks' : 'Show notebooks'}>{#if sidebar}<PanelLeftClose size={18}/>{:else}<PanelLeftOpen size={18}/>{/if}</button><button class="icon mobile-back" onclick={() => mobileEditor = false} aria-label="Back to notes"><ArrowLeft size={18}/></button><div class="breadcrumb">{#if view}<button class="note-title" aria-label="Rename current note" title="Rename note" onclick={() => beginRename(view!.document)}><h1>{title(view.document.name)}</h1></button>{:else}{selectedLibrary?.name ?? 'Your notes'}{/if}</div>{#if view}{#if quickCaptureTitle && host.documents?.rename}<button class="suggest-title" aria-label="Use first line as title" title={`Use “${quickCaptureTitle}” as title`} onclick={useFirstLineAsTitle}><TextCursorInput size={14}/><span>Use first line as title</span></button>{/if}<button class="icon focus-toggle" aria-label={focusMode ? "Exit focus mode" : "Focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} onclick={() => { focusMode = !focusMode; mode = "edit"; }}>{#if focusMode}<Minimize size={16}/>{:else}<Maximize size={16}/>{/if}</button><div class="document-actions"><button class="icon" class:chosen={parsed.organization.pinned} aria-label={parsed.organization.pinned ? "Unpin note" : "Pin note"} aria-pressed={parsed.organization.pinned} title={parsed.organization.pinned ? "Unpin note" : "Pin note"} onclick={() => organize({pinned: !parsed.organization.pinned})}><Pin size={16}/></button><button class="icon" aria-label="Organize note" title="Tags and color" aria-expanded={organizeOpen} onclick={() => organizeOpen = !organizeOpen}><Tag size={16}/></button><button class="icon" aria-label="Export Markdown" title="Export Markdown" onclick={() => download(view!.content, view!.document.name)}><Download size={17}/></button><button class="icon" aria-label="Delete note" title="Delete note" onclick={() => beginDelete(view!.document)}><Trash2 size={16}/></button></div><div class="view-modes" aria-label="Editor view"><button class:active={mode === 'edit'} class="icon" aria-label="Edit Markdown" title="Edit Markdown" onclick={() => mode = 'edit'}><PenLine size={16}/></button><button class:active={mode === 'split'} class="icon split-button" aria-label="Split view" title="Split view" aria-pressed={mode === 'split'} onclick={() => mode = mode === 'split' ? 'edit' : 'split'}><Columns2 size={16}/></button><button class:active={mode === 'preview'} class="icon" aria-label="Preview" title="Preview" onclick={() => mode = 'preview'}><Eye size={17}/></button></div>{/if}</header>
@@ -594,7 +642,7 @@
           <button class="icon" title="Audio · upload or record" aria-label="Insert audio" onclick={() => openMedia('audio')}><Mic size={17}/></button>
         </div>{/if}
         <div class="writing" class:split={mode === 'split'} class:preview-only={mode === 'preview'}>
-          {#if mode !== 'preview'}<textarea class="editor" bind:this={editor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || !!mediaKind} value={parsed.body} oninput={e => session?.edit(withBody(view!.content, e.currentTarget.value))} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}
+          {#if mode !== 'preview'}<textarea class="editor" bind:this={editor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind} value={parsed.body} oninput={e => { if (!deletionUncertain) session?.edit(withBody(view!.content, e.currentTarget.value)); }} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}
           {#if mode !== 'edit'}<!-- svelte-ignore a11y_click_events_have_key_events --><!-- svelte-ignore a11y_no_static_element_interactions --><div class="preview"><Preview content={parsed.body} documents={host.documents!} noteId={view.document.id}/></div>{/if}
         </div>
         <footer><span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span><button class="save-status" onclick={() => void save()} disabled={view.saving || !view.dirty || view.conflict}>{#if view.saving}<LoaderCircle size={13} class="spin"/> Saving…{:else if view.dirty}<span class="unsaved-dot"></span>{view.error ? 'Not saved' : 'Save now'}{:else}<Check size={14}/> All changes saved{/if}</button></footer>
@@ -612,7 +660,7 @@
       <button class="icon close" aria-label="Close dialog" onclick={() => { createOpen = false; deleteOpen = false; reloadOpen = false; renameOpen = null; }} disabled={creating || deleting || actionBusy}><X size={18}/></button>
       {#if renameOpen}<TextCursorInput size={26}/><h2>Rename {renameOpen}</h2><form onsubmit={e => { e.preventDefault(); void rename(); }}><label for="rename-name">{renameOpen === 'note' ? 'Note' : 'Notebook'} name</label><input id="rename-name" bind:value={renameName} maxlength={renameOpen === 'note' ? 220 : 120} required disabled={actionBusy}/><small>{renameOpen === 'note' ? 'The Markdown filename changes. Your writing stays intact.' : 'A name that makes this notebook easy to find.'}</small><button class="primary" disabled={actionBusy || !renameName.trim()}>{actionBusy ? 'Renaming…' : 'Save name'}</button></form>
       {:else if createOpen}<BookOpen size={26}/><h2>{createTemplate ? createTemplate : 'A fresh page.'}</h2><p>{createTemplate ? 'Create a new copy to make your own. Your earlier notes stay as they are.' : 'Give your note a name. You can start writing right away.'}</p><form onsubmit={e => { e.preventDefault(); void create(); }}><label for="new-note-name">Note name</label><input id="new-note-name" bind:value={createName} placeholder="An idea worth keeping" maxlength="220" required disabled={creating}/><small>Saved as a Markdown file in {selectedLibrary?.name}.</small>{#if createError}<p class="form-error" role="alert">{createError}</p>{/if}<button class="primary" type="submit" disabled={creating}>{#if creating}<LoaderCircle size={16} class="spin"/> Creating…{:else}<Plus size={16}/> Create note{/if}</button></form>
-      {:else if deleteOpen}<Trash2 size={26}/><h2>Delete this note?</h2><p>“{actionNote ? title(actionNote.name) : ''}” will be permanently deleted from its storage folder. This cannot be undone.</p><div class="dialog-actions"><button onclick={() => deleteOpen = false} disabled={deleting}>Cancel</button><button class="danger" onclick={() => void remove()} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete note'}</button></div>
+      {:else if deleteOpen}<Trash2 size={26}/><h2>{trashSupported ? 'Move this note to Trash?' : 'Delete this note?'}</h2><p>“{actionNote ? title(actionNote.name) : ''}” {trashSupported ? 'will stay in Trash until you restore or permanently delete it.' : 'will be permanently deleted from its storage folder. This cannot be undone.'}</p><div class="dialog-actions"><button onclick={() => deleteOpen = false} disabled={deleting}>{deletePending ? 'Close' : 'Cancel'}</button>{#if deletePending}<button onclick={() => void remove(true)} disabled={deleting}>Check status</button>{/if}<button class="danger" onclick={() => void remove()} disabled={deleting}>{deleting ? 'Confirming…' : deletePending ? 'Retry same request' : trashSupported ? 'Move to Trash' : 'Delete note'}</button></div>
       {:else}<RefreshCw size={26}/><h2>Replace this draft?</h2><p>Your current unsaved edits will be replaced by the saved version. Export a copy first if you want to keep them.</p><button class="quiet" onclick={() => download(view!.content, view!.document.name)}>Export draft</button><button class="danger" onclick={() => void reload()}>Reload saved version</button>{/if}
       {#if actionError}<p class="form-error" role="alert">{actionError}</p>{/if}
     </div></div>

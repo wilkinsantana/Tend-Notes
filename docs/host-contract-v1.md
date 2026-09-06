@@ -207,3 +207,39 @@ failure never triggers synchronous parsing on the main thread; reopening ToDo
 creates a fresh worker. Source revisions still belong to the host API, and the
 existing expected-revision save is unchanged. Task paging is presentation only:
 filters run over the complete loaded collection before selecting a page.
+
+### Recoverable Trash (optional v1 capability)
+
+`documents.trash?.version === 1` advertises recovery. `move({documentId,
+revision,operationId})` retains canonical Markdown on the original server.
+`list(cursor?)` returns owner-bound `TrashItem` summaries and `nextCursor`.
+`restore(id,{generation,operationId,name?})` restores to the original folder,
+optionally under another Markdown basename, without replacing an existing file.
+`purge(id,{generation,operationId,confirmed:true})` permanently removes retained
+Markdown after ordinary explicit confirmation. No name typing is required.
+
+Every mutation uses a fresh UUID v4 and returns a `TrashOperation` with the
+same `operationId`, action, opaque `trashId`, and state `pending`, `confirmed`,
+or `failed`. Pending is HTTP 202, not proof of failure or success. Preserve the
+exact request for a transport retry; do not generate a second operation ID.
+`status(operationId)` observes a durable receipt; `retry(operationId)` resumes
+an already admitted operation. If the initial request may never have arrived,
+replay its original mutation and full input instead. A 404 status alone does
+not authorize deleting another object or silently falling back to permanent
+deletion. The old `documents.delete` remains only for hosts that omit Trash;
+clients must reject unsupported advertised Trash versions.
+
+Items expose their notebook label, original name, size, deletion time, generation,
+and `activeOperationId` while unresolved. Recovery payloads, paths, credentials,
+and filesystem identities never cross the browser contract. An operation that
+encounters a changed original preserves that original and retains a separately
+recoverable earlier version when a verified copy exists. Newer browser drafts
+remain recoverable after an uncertain deletion is reconciled.
+
+Trash stays on the original server until explicitly purged, with a limit of
+1,000 retained or unresolved items per owner. It is not included in current
+Markdown ZIP exports or Notes backups. Attachments remain in the original
+folder; restoring there preserves relative references. Source/archive disabling
+preserves Trash; restore requires reactivation. Removing or repointing storage
+with retained or pending recovery is blocked until recovery is resolved. Server
+disk loss is outside this retention guarantee; no secure-erasure claim is made.

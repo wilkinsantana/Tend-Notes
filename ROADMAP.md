@@ -162,3 +162,13 @@ milestones above; a worker is not an offline sync engine or a security sandbox.
 - A packaging regression constructs identical assets in different orders and
   requires byte-identical ZIP output. Previously published packages remain
   immutable; this release retains the 0.4.1 worker and paging behavior.
+
+## Recoverable Trash — implementation, release pending
+
+Move notes to server-backed Trash, restore with an optional new name, or explicitly
+permanently delete them with a normal confirmation. Pending actions retain exact
+request IDs and expose status/retry. Changed originals and unsaved drafts remain
+protected. Available after installing the matching host and Notes updates.
+
+Version history, Trash-inclusive backups, live formatted writing, offline sync,
+and the remaining approved milestones are still pending.

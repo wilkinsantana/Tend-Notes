@@ -16,6 +16,7 @@ export interface Backups {
   downloadUrl(id: string): string;
 }
 export interface Documents {
+  trash?: Trash;
   backups?: Backups;
   setupLibrary?(): Promise<Library | null>;
   rename?(id: string, input: {name: string; revision: string}): Promise<Document>;
@@ -39,4 +40,25 @@ export interface Host {
   user: { id: string; name: string; role: string } | null;
   documents?: Documents;
   onUnmount(fn: () => void | Promise<void>): void;
+}
+
+export interface TrashItem {
+  id: string; generation: number; libraryId: string; libraryName: string;
+  name: string; revision: string; size: number; deletedAt: number;
+  state: 'moving' | 'retained' | 'restoring' | 'purging'; activeOperationId: string | null;
+}
+export interface TrashOperation {
+  operationId: string; action: 'move' | 'restore' | 'purge'; state: 'pending' | 'confirmed' | 'failed';
+  trashId: string; submittedAt: number; updatedAt: number;
+  result: {id?: string; libraryId?: string; name?: string; revision?: string; size?: number; modifiedAt?: number | null} | null;
+  error: {code: string; message: string} | null;
+}
+export interface Trash {
+  version: 1;
+  list(cursor?: string): Promise<{items: TrashItem[]; nextCursor: string | null; retention: 'until_permanently_deleted'}>;
+  move(input: {documentId: string; revision: string; operationId: string}): Promise<TrashOperation>;
+  status(operationId: string): Promise<TrashOperation>;
+  retry(operationId: string): Promise<TrashOperation>;
+  restore(id: string, input: {generation: number; operationId: string; name?: string}): Promise<TrashOperation>;
+  purge(id: string, input: {generation: number; operationId: string; confirmed: true}): Promise<TrashOperation>;
 }
