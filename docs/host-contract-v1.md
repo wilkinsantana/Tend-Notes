@@ -113,3 +113,39 @@ preserves conflicting existing locations and safely resumes identical retries.
 Neither setup method starts a backup or changes the schedule. Notes host folders
 need their own backup; the panel database/data volume is not a document backup.
 Older hosts show an update message if the setup capability is unavailable.
+
+### Optional rename and media capabilities
+
+`rename(id, {name, revision}) -> Document` renames the canonical Markdown file
+within its existing directory. The returned path-derived ID may change. It
+requires a current revision and refuses an existing target; clients flush and
+freeze selected drafts before renaming. A lost response may require reopening
+the renamed note from the list; original content is preserved. Notebook names
+use `renameLibrary(id, name) -> Library`, which changes owner-scoped metadata
+without moving its storage folder. Older hosts surface an update message.
+
+`attachments.upload(noteId, Blob) -> {path, type}` and
+`attachments.read(noteId, path) -> Blob` use opaque owner-authorized note IDs.
+The host selects the source/server/root, checks the active extension's read or
+write permission, and passes bounded input to a fixed local/SSH worker.
+Canonical media uses `attachments/<sha256>.<extension>` beside each note.
+Directories are 0700 and new files 0600; descriptor traversal refuses symlinks
+and special files, publishes without overwriting, and confirms bytes by hash.
+Uploads are limited to 20 MB with raster-image/audio signature checks. HTML and
+SVG are not accepted. Unreferenced uploads are retained to avoid removing data
+shared by other notes or recoverable drafts.
+
+ZIP exports and connected backups include referenced attachments at their
+relative paths, deduplicated by content address within a notebook. Every source
+reference is authorized and read; missing/corrupt attachments fail the archive.
+The existing 500 MB total source and 100 MB archive limits include media.
+
+Optional `attachments.externalImageUrl(httpsUrl)` returns an owner-gated,
+host-generated HTML frame URL. It never proxies image bytes through the server.
+The frame has an empty sandbox and a dedicated restrictive CSP permitting HTTPS
+images only; the panel's image allowlist stays unchanged. YouTube uses only
+validated video IDs and the exact youtube-nocookie.com embed origin. Remote
+frames are created only after a deliberate click. Source HTML cannot create
+trusted media controls, scripts, or frames. Browser object URLs and microphone
+tracks are cleaned up on close/unmount. Media insertion captures the current
+note/body and cannot apply stale cursor positions to refreshed remote content.

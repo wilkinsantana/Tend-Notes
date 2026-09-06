@@ -224,3 +224,123 @@ test('notebook and backup destination setup stay inside Notes and preserve cance
   await expect(backups.getByLabel('Backup folder')).toHaveValue(selected);
   await expect(page).toHaveURL(/\/\?empty$/);
 });
+
+test('preview and split render Markdown, keep code literal, and split toggles off', async ({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  await editor.fill('# Real heading\n\n**Hello! **\n\n- One\n- Two\n\n> A quote\n\n```js\nconst sample = "**raw **";\n```');
+  await page.getByRole('button',{name:'Split view',exact:true}).click();
+  await expect(page.locator('.preview h1')).toHaveText('Real heading');
+  await expect(page.locator('.preview strong')).toHaveText('Hello!');
+  await expect(page.locator('.preview li')).toHaveCount(2);
+  await expect(page.locator('.preview blockquote')).toContainText('A quote');
+  await expect(page.locator('.preview pre')).toContainText('"**raw **"');
+  await page.getByRole('button',{name:'Split view',exact:true}).click();
+  await expect(page.locator('.preview')).toHaveCount(0);
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.locator('.preview strong')).toHaveText('Hello!');
+  await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
+  await editor.fill('Hello! ');await editor.selectText();
+  await page.getByRole('button',{name:'Bold',exact:true}).click();
+  await expect(editor).toHaveValue('**Hello!** ');
+});
+
+test('list actions rename, pin, color and delete another note without opening it',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  const writing=await editor.inputValue();
+  await page.getByRole('button',{name:'New note',exact:true}).click();
+  await page.getByLabel('Note name',{exact:true}).fill('Second idea');
+  await page.getByRole('button',{name:'Create note',exact:true}).click();
+  await editor.fill('Keep editing this note');
+  await page.getByRole('button',{name:'Color for Small things worth keeping',exact:true}).click();
+  await page.getByRole('button',{name:'sky note color',exact:true}).click();
+  await expect(page.locator('.note').filter({hasText:'Small things worth keeping'})).toHaveAttribute('data-note-color','sky');
+  await page.getByRole('button',{name:'Pin Small things worth keeping',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Unpin Small things worth keeping',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Rename Small things worth keeping',exact:true}).click();
+  await page.getByLabel('Note name',{exact:true}).fill('Saved thoughts');
+  await page.getByRole('button',{name:'Save name',exact:true}).click();
+  await expect(editor).toHaveValue('Keep editing this note');
+  await expect(page.getByRole('button',{name:/Saved thoughts.*Markdown/})).toBeVisible();
+  await page.getByRole('button',{name:'Rename notebook',exact:true}).click();
+  await page.getByLabel('Notebook name',{exact:true}).fill('My ideas');
+  await page.getByRole('button',{name:'Save name',exact:true}).click();
+  await expect(page.locator('#notes-library option:checked')).toHaveText('My ideas');
+  await page.getByRole('button',{name:'Delete Saved thoughts',exact:true}).click();
+  await page.getByLabel('Type the note name to delete it').fill('Saved thoughts');
+  await page.getByRole('dialog',{name:'Delete note',exact:true}).getByRole('button',{name:'Delete note',exact:true}).click();
+  await expect(page.getByRole('button',{name:/Saved thoughts.*Markdown/})).toHaveCount(0);
+  await expect(editor).toHaveValue('Keep editing this note');
+  expect(writing).toContain('Small things');
+});
+
+test('media is portable, remote loads require a click, and raw HTML cannot create embeds',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:'Insert image',exact:true}).click();
+  await page.getByLabel('Media description').fill('One pixel');
+  await page.getByLabel('Image file',{exact:true}).setInputFiles({name:'pixel.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=','base64')});
+  const editor=page.getByRole('textbox',{name:'Note Markdown'});
+  await expect(editor).toHaveValue(/!\[One pixel\]\(attachments\/[a-f0-9]{64}\.png\)/);
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await expect(page.locator('.preview img')).toHaveAttribute('src',/^blob:/);
+  await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
+  await editor.fill('![Remote](https://example.com/image.png)\n\n[Film](https://youtu.be/dQw4w9WgXcQ)\n\n<iframe src="https://example.com"></iframe>\n<button data-notes-media="1">Fake</button>');
+  await page.route('https://www.youtube-nocookie.com/**',route=>route.fulfill({body:'<html>Fixture video</html>',contentType:'text/html'}));
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await expect(page.locator('.preview iframe,.preview img')).toHaveCount(0);
+  await expect(page.locator('.preview button')).toHaveCount(2);
+  await page.getByRole('button',{name:'Load YouTube video',exact:true}).click();
+  await expect(page.locator('.preview iframe')).toHaveAttribute('src','https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');
+});
+
+test('recording stops on close and a finished clip can be inserted as portable audio',async({browser})=>{
+  const context=await browser.newContext({permissions:['microphone']});
+  const page=await context.newPage();
+  await page.addInitScript(()=>{
+    const state={stopped:0};Object.assign(window,{recordingFixture:state});
+    // A deterministic recorder fixture exercises permission/stop/upload UI.
+    Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>({getTracks:()=>[{stop(){state.stopped++;}}]})});
+    class Recorder extends EventTarget {
+      static isTypeSupported(){return true;} state='inactive';mimeType='audio/webm';ondataavailable:any;onstop:any;
+      start(){this.state='recording';}stop(){this.state='inactive';this.ondataavailable?.({data:new Blob([new Uint8Array([26,69,223,163]),'webm fixture'],{type:this.mimeType})});setTimeout(()=>this.onstop?.(),250);}
+    }
+    Object.assign(window,{MediaRecorder:Recorder});
+  });
+  await page.goto('/');await page.locator('.note-open').first().click();
+  await page.getByRole('button',{name:'Insert audio',exact:true}).click();
+  await page.getByRole('button',{name:'Record audio',exact:true}).click();
+  await expect(page.getByRole('button',{name:/Stop recording/})).toBeVisible();
+  await page.getByRole('button',{name:'Close media dialog',exact:true}).click();
+  expect(await page.evaluate(()=>(window as any).recordingFixture.stopped)).toBeGreaterThan(0);
+  await page.getByRole('button',{name:'Insert audio',exact:true}).click();
+  await page.getByRole('button',{name:'Record audio',exact:true}).click();
+  await page.getByRole('button',{name:/Stop recording/}).click();
+  await expect(page.getByRole('button',{name:/Finishing recording/})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'Record audio',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Use recording',exact:true}).click();
+  await expect(page.getByLabel('Note Markdown')).toHaveValue(/\[Audio note\]\(attachments\/[a-f0-9]{64}\.webm\)/);
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await expect(page.locator('.preview audio')).toHaveAttribute('controls','');
+  await context.close();
+});
+
+test('media insertion never applies old offsets to a refreshed remote document',async({page})=>{
+  await page.goto('/');await page.locator('.note-open').first().click();
+  const editor=page.getByLabel('Note Markdown');
+  await editor.fill('Original text');await expect(page.getByRole('button',{name:'All changes saved',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Insert image',exact:true}).click();
+  await page.evaluate(async()=>{
+    const key='tend-notes:demo-documents';const docs=JSON.parse(localStorage.getItem(key)!);
+    docs[0].content='REMOTE change must survive';docs[0].revision=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(docs[0].content)))].map(x=>x.toString(16).padStart(2,'0')).join('');localStorage.setItem(key,JSON.stringify(docs));
+  });
+  await page.waitForTimeout(3300);
+  await page.getByLabel('Image link',{exact:true}).fill('https://example.com/image.png');
+  await page.getByRole('dialog',{name:'Insert image',exact:true}).getByRole('button',{name:'Insert link',exact:true}).click();
+  await expect(editor).toHaveValue(/Original text/);
+  await expect(page.getByRole('alert')).toContainText('changed elsewhere');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tend-notes:demo-documents')!)[0].content)).toBe('REMOTE change must survive');
+});

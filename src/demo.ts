@@ -4,6 +4,8 @@ import { demoStorageSetup } from './demoSetup';
 import { unpack } from './organization';
 import type { Document, Host, BackupState } from './host';
 const key = 'tend-notes:demo-documents';
+const renamedLibraries = new Map<string,string>();
+const attachments = new Map<string,Blob>();
 const extraLibraries: Array<{id: string; name: string; canCreate: boolean}> = [];
 const extraDestinations: Array<{id: string; name: string; provider: string}> = [];
 const state = { readDelay: 0, saveDelay: 0, saveFails: false, backupFixture: false };
@@ -17,6 +19,9 @@ if (!localStorage.getItem(key)) {
   put([{id:'welcome',libraryId:'personal',name:'Small things worth keeping.md',modifiedAt:Math.floor(Date.now()/1000),size:content.length,content,revision:await revision(content)}]);
 }
 const host: Host = { id:'host.tend.notes',user:{id:'demo-user',name:'You',role:'user'},onUnmount(){},documents:{version:1,
+  async renameLibrary(id,name){renamedLibraries.set(id,name);return {id,name,canCreate:true};},
+  async rename(id,input){const all=get(),at=all.findIndex(d=>d.id===id);if(at<0)throw new Error('Note not found');if(all[at].revision!==input.revision)throw new Error('Note changed elsewhere');if(all.some(d=>d.id!==id&&d.libraryId===all[at].libraryId&&d.name===input.name))throw new Error('A note with this name already exists.');all[at]={...all[at],name:input.name};put(all);return all[at];},
+  attachments:{async upload(_id,file){const bytes=await file.arrayBuffer();const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');const ext=file.type.includes('png')?'png':file.type.includes('jpeg')?'jpg':file.type.includes('wav')?'wav':'webm';const path='attachments/'+hash+'.'+ext;attachments.set(path,file);return{path,type:file.type};},async read(_id,path){const blob=attachments.get(path);if(!blob)throw new Error('Sample attachment unavailable after reload');return blob;}},
   async setupLibrary(){const input=await demoStorageSetup('notebook');if(!input)return null;const library={id:crypto.randomUUID(),name:input.name,canCreate:true};extraLibraries.push(library);return library;},
   backups: {
     async setupDestination(){const input=await demoStorageSetup('backup');if(!input)return null;const destination={id:crypto.randomUUID(),...input};extraDestinations.push(destination);return destination;},
@@ -27,7 +32,7 @@ const host: Host = { id:'host.tend.notes',user:{id:'demo-user',name:'You',role:'
     async cancel(id){const job=demoBackups.jobs.find(j=>j.id===id);if(!job)throw new Error('Export not found');return job;},
     downloadUrl(){return 'data:application/zip;base64,UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==';},
   },
-  async libraries(){return [...(new URLSearchParams(location.search).has('empty') ? [] : [{id:'personal',name:'Personal notes',canCreate:!new URLSearchParams(location.search).has('unconnected')},{id:'work',name:'Work notes',canCreate:!new URLSearchParams(location.search).has('unconnected')}]),...extraLibraries];},
+  async libraries(){return [...(new URLSearchParams(location.search).has('empty') ? [] : [{id:'personal',name:'Personal notes',canCreate:!new URLSearchParams(location.search).has('unconnected')},{id:'work',name:'Work notes',canCreate:!new URLSearchParams(location.search).has('unconnected')}]),...extraLibraries].map(l=>({...l,name:renamedLibraries.get(l.id)??l.name}));},
   async index(){return {indexed:0,skipped:0,more:false};},
   async list(libraryId,query='',offset=0,filters={}){
     const library=get().filter(d=>d.libraryId===libraryId).map(d=>({...d,...unpack(d.content).organization}));

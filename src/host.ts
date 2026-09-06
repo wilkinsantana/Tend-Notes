@@ -18,6 +18,13 @@ export interface Backups {
 export interface Documents {
   backups?: Backups;
   setupLibrary?(): Promise<Library | null>;
+  rename?(id: string, input: {name: string; revision: string}): Promise<Document>;
+  renameLibrary?(id: string, name: string): Promise<Library>;
+  attachments?: {
+    externalImageUrl?(url: string): string;
+    upload(id: string, file: Blob): Promise<{path: string; type: string}>;
+    read(id: string, path: string): Promise<Blob>;
+  };
   version: 1;
   libraries(): Promise<Library[]>;
   index(libraryId: string, skipped?: number): Promise<{ indexed: number; skipped: number; more: boolean }>;

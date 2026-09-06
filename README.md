@@ -44,8 +44,8 @@ Cloud-mounted storage is not yet supported for editing. New notes require exactl
 one connected server-folder source in the selected library. Notes are limited to
 1 MB of UTF-8 text. Search matches filenames and words inside notes, including
 typed hashtags. Existing files are indexed in small background batches; a status
-message reports preparation or interrupted indexing. Rename and folder
-organization remain available in Files.
+message reports preparation or interrupted indexing. Rename notes and notebooks
+directly in Notes; existing folder organization remains available in Files.
 
 The editor saves after a short pause. If a note changes in another Tend window,
 it keeps your draft and offers **Export draft**, **Save as new note**, or
@@ -55,7 +55,7 @@ The saved Markdown file is authoritative. Deleting a note deletes its original
 file after explicit confirmation. Keep your normal storage backups.
 
 Preview supports common Markdown, lists, code, and tables. Embedded HTML is
-filtered and images are not loaded automatically. Links open only after you
+displayed safely; external images load only after a click. Links open only after you
 click them. No external writing service, tracking, or AI account is required.
 
 ## Organize without a filing chore
@@ -115,7 +115,7 @@ bun run test
 bun run build
 ```
 
-`dist/tend-notes-0.1.1.zip` contains the native extension, integrity manifest,
+`dist/tend-notes-0.2.0.zip` contains the native extension, integrity manifest,
 license, and dependency notices. `bun run dev` opens the local demonstration;
 its clearly labeled sample notebook is for development only. Use
 `bun run test:browser` for interaction and preview-safety checks.
@@ -128,3 +128,26 @@ installation remains a deliberate user action in Tend.
 See [the host contract](docs/host-contract-v1.md), [contributing](CONTRIBUTING.md),
 and [the roadmap](ROADMAP.md). Code is available under the [MIT license](LICENSE).
 Third-party notices are included in every packaged release.
+
+### Writing tools and attachments
+
+New note, Quick capture, and Add notebook sit together above the note list.
+Hover or focus each icon for its name. Each note has pin, color, rename, and
+delete actions beside its date; these work without opening the note. Rename a
+notebook beside its selector, or click the open note's title to rename it.
+
+The two-row editor offers headings, emphasis, lists, checklists, quotes, links,
+inline/fenced code, tables, dividers, images, YouTube videos, and audio. Preview
+renders Markdown; Split shows source and output together and toggles back to
+editing when clicked again. On narrow panels, Split stacks the two panes.
+
+Upload PNG, JPEG, GIF, WebP, MP3, M4A, WAV, Ogg, or WebM files up to 20 MB.
+Audio can also be recorded in a supported HTTPS browser, up to five minutes.
+The microphone stops on Stop or dialog close; listen before choosing Use
+recording. Files are stored beside the Markdown, with portable relative links.
+External image links and YouTube videos load only on request.
+
+Export Markdown downloads the text file. **Export & backups** prepares a ZIP
+containing your notes and their uploaded attachments, with relative links intact.
+Connected-drive and automatic backups use the same complete archive. Linked
+external media remains a link and needs its original service to stay available.
