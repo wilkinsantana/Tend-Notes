@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube } from 'lucide-svelte';
+  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays } from 'lucide-svelte';
   import type { Host, Library, Note, Document } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import Preview from './Preview.svelte';
@@ -10,6 +10,7 @@
   import { TaskWorkspace, type TaskState } from './taskWorkspace';
   import { WorkerTaskProcessor } from './taskProcessor';
   import type { NoteTemplate } from './templates';
+  import { dailyNote } from './daily';
   import MediaDialog from './MediaDialog.svelte';
   import { editMarkdown } from './formatting';
   import { markdownNewline, type MarkdownNewline } from './keyboard';
@@ -43,6 +44,7 @@
   let refreshTimer: ReturnType<typeof setInterval>;
   let mobileEditor = $state(false);
   let templateTrigger: HTMLElement | null = null;
+  let todayOpening = $state(false);
   let templatesOpen = $state(false);
   let todoOpen = $state(false);
   let trashOpen = $state(false);
@@ -169,6 +171,76 @@
     } catch(e) { if(alive) error = message(e); }
     finally { opening = false; }
   }
+  async function findDaily(documents: NonNullable<Host['documents']>, library: string, name: string, current: () => boolean) {
+    // Search is advisory presentation state. This exact, bounded lookup never
+    // inherits the sidebar's query, tag, color, pin, or sort filters.
+    let offset = 0;
+    for (let pages = 0; pages < 20; pages += 1) {
+      if (!current()) return undefined;
+      const page = await documents.list(library, name, offset, {sort: 'title'});
+      if (!current()) return undefined;
+      const match = page.items.find(note => note.name === name);
+      if (match) return match;
+      if (page.nextOffset === null || page.nextOffset <= offset) return null;
+      offset = page.nextOffset;
+    }
+    throw new Error('Today’s note could not be located safely. Refresh Notes and try again.');
+  }
+
+  async function openToday() {
+    if (!selectedLibrary?.canCreate || opening || creating || todayOpening || !host.documents) return;
+    const documents = host.documents;
+    const account = host.user?.id;
+    const targetLibrary = libraryId;
+    const target = dailyNote();
+    const current = () => alive && host.documents === documents && host.user?.id === account && libraryId === targetLibrary;
+    todayOpening = true; opening = true; error = '';
+    try {
+      if (!(await ensureSaved()) || !current()) return;
+      let existing = await findDaily(documents, targetLibrary, target.name, current);
+      if (!current()) return;
+      let document: Document;
+      if (existing) {
+        document = await documents.read(existing.id);
+      } else {
+        try {
+          document = await documents.create({libraryId: targetLibrary, name: target.name, content: target.content});
+        } catch (cause) {
+          // A second client may have won the name, or publication may have
+          // completed before its response was lost. Observe once; never issue
+          // another create against a possibly occupied daily slot.
+          existing = await findDaily(documents, targetLibrary, target.name, current);
+          if (!current()) return;
+          if (!existing) {
+            if ((cause as {status?: number})?.status === 409) {
+              throw new Error('Today’s note may have been created elsewhere. Refresh Notes before trying again.');
+            }
+            throw cause;
+          }
+          document = await documents.read(existing.id);
+        }
+      }
+      // A save can begin while lookup/create is in flight. Do not abandon its
+      // session unless it has confirmed; NoteSession keeps a recovery draft on failure.
+      if (!(await ensureSaved()) || !current()) return;
+      // An in-flight read can describe the already-open document before its
+      // latest save. Keep that authoritative session instead of reconnecting a
+      // stale snapshot after the second save fence.
+      if (session?.view.document.id === document.id) {
+        quickCapturedId = ''; mode = 'edit'; mobileEditor = true;
+        await loadList();
+        if (!current()) return;
+        await tick(); editor?.focus();
+        return;
+      }
+      session?.abandon(); connect(document); quickCapturedId = ''; mode = 'edit';
+      await loadList();
+      if (!current()) return;
+      await tick(); editor?.focus();
+    } catch (e) { if (current()) error = message(e); }
+    finally { if (alive) { todayOpening = false; opening = false; } }
+  }
+
   async function quickCapture() {
     if (!selectedLibrary?.canCreate || opening || creating) return;
     if (!(await ensureSaved())) return;
@@ -576,6 +648,7 @@
       <div class="capture-actions" aria-label="Notebook actions">
         <button class="primary new-note" aria-label="New note" title="New note" onclick={() => beginCreate()} disabled={!selectedLibrary?.canCreate}><FilePlus2 size={20}/></button>
         <button class="icon quick-capture" aria-label="Quick capture" title="Quick capture (Ctrl+Shift+N)" onclick={() => void quickCapture()} disabled={!selectedLibrary?.canCreate || opening}><Zap size={19}/></button>
+        <button class="icon today-note" aria-label="Today" title="Open today’s daily note" onclick={() => void openToday()} disabled={!selectedLibrary?.canCreate || opening || todayOpening}><CalendarDays size={19}/></button>
         <button class="icon" aria-label="Templates" title="Start from a template" onclick={openTemplates} disabled={!selectedLibrary?.canCreate || opening || creating}><LayoutTemplate size={19}/></button>
         <button class="icon setup-link" aria-label={selectedLibrary?.canCreate ? 'Add notebook' : 'Set up notebook'} title={selectedLibrary?.canCreate ? 'Add notebook' : 'Set up notebook'} disabled={opening} onclick={() => void setupNotebook()}><BookPlus size={20}/></button>
       </div>

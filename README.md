@@ -12,6 +12,7 @@ alongside Sites. It runs inside Tend in the browser and desktop app.
 - Live Tend theme colors and panel transparency, with readable menus and dialogs.
 - Quick capture, automatic saving, visible status, and conflict protection.
 - Reusable grocery, packing, meeting, daily-plan, project, and checklist templates.
+- A Today shortcut that creates or reopens your daily note in the current notebook.
 - Saved notes refresh across online Tend sessions about every three seconds.
 - Account- and tab-scoped browser draft recovery.
 - Import and export ordinary `.md` and `.markdown` files.
@@ -70,6 +71,21 @@ conflict protection as an ordinary rename and never replaces another note.
 Preview supports common Markdown, lists, code, and tables. Embedded HTML is
 displayed safely; external images load only after a click. Links open only after you
 click them. No external writing service, tracking, or AI account is required.
+
+## Start with Today
+
+Choose the calendar icon, **Today**, beside Quick capture to open a daily plan
+in the selected notebook. Notes uses your device's local date and the filename
+`Daily YYYY-MM-DD.md`. The first visit creates a Markdown plan with priorities,
+a schedule, and space for notes. Later visits reopen that day's note with your
+writing and completed tasks intact. Its checkboxes also appear in **ToDo**.
+
+Today saves your current draft before switching. If that save cannot be
+confirmed, the editor keeps the draft so you can resolve or export it. An
+existing daily note is never replaced with the template. Today uses your normal
+notebook storage and requires a connection; it is not an offline sync feature.
+Renaming the daily file makes it an ordinary note; the next Today visit uses
+the dated filename again.
 
 ## Start from a template
 
