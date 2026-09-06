@@ -21,18 +21,31 @@ alongside Sites. It runs inside Tend in the browser and desktop app.
 
 ## Start a notebook
 
-Use a Tend version with the document capability v1. Activate Notes in
-**Extensions**, open it, and choose **Set up your notebook**. Select an existing
-notebook or connect a server folder inside the Notes panel. Choose **New note**
-to start writing. **Add notebook** opens the same setup at any time. Notes stay
-as Markdown files in the selected folder; existing Markdown is scanned during
-setup. Files remains another way to access the same folders.
+Use an updated Tend version with document capability v1. Activate Notes in
+**Extensions**, open it, and choose **Set up your notebook → Start writing**.
+Tend automatically creates a protected, durable folder on its Linux server.
+There is no drive to connect or system folder to browse. **Add notebook** creates
+another managed notebook; existing connected notebooks remain available.
 
-Version 0.1 supports folders on Linux managed servers, including a server local
-to the panel. Cloud-mounted storage is not yet supported for editing. New notes
-require exactly one connected server-folder source in the selected library.
-Notes are limited to 1 MB of UTF-8 text. Search matches filenames and words inside notes, including typed hashtags. Existing files are indexed in small background batches; a status message reports preparation or interrupted indexing. Rename and
-folder organization remain available in Files.
+**Use a different server** is optional. Notes warns that removing or replacing
+that server, or deleting its storage, can lose your notes. Set up a separate
+backup destination after creating the notebook. Notes survive normal Tend updates
+and removing the extension. A backup of the panel's own data volume alone does
+not include these host folders; use Notes backups for your documents.
+
+Managed setup supports Linux hosts with Tend's host access and connected Linux
+servers with verified SSH identities. Docker Desktop's internal VM is not a
+supported notebook destination. If local host access is unavailable, setup asks
+you to choose a connected Linux server; it never silently chooses another server.
+Folder permissions restrict ordinary system users; host and panel administrators
+still control the server. Existing Markdown libraries continue to work.
+
+Cloud-mounted storage is not yet supported for editing. New notes require exactly
+one connected server-folder source in the selected library. Notes are limited to
+1 MB of UTF-8 text. Search matches filenames and words inside notes, including
+typed hashtags. Existing files are indexed in small background batches; a status
+message reports preparation or interrupted indexing. Rename and folder
+organization remain available in Files.
 
 The editor saves after a short pause. If a note changes in another Tend window,
 it keeps your draft and offers **Export draft**, **Save as new note**, or
@@ -68,7 +81,7 @@ folders to use another Markdown app, or into a Tend Documents source and scan
 it in Files to restore your notes.
 
 For another copy, open **Export & backups → Add backup destination** inside
-Notes. Choose a connected folder or **Connect a new drive**, complete the
+Notes. If no drive is connected, use **Connect a new drive** first. Choose a connected folder or **Connect a new drive**, complete the
 provider's existing Tend form, and choose **Use this destination**. The selected
 folder appears immediately. Choose **Back up now** or enable an hourly, daily,
 or weekly schedule. Google Drive and other providers reuse Tend's storage
@@ -102,7 +115,7 @@ bun run test
 bun run build
 ```
 
-`dist/tend-notes-0.1.0.zip` contains the native extension, integrity manifest,
+`dist/tend-notes-0.1.1.zip` contains the native extension, integrity manifest,
 license, and dependency notices. `bun run dev` opens the local demonstration;
 its clearly labeled sample notebook is for development only. Use
 `bun run test:browser` for interaction and preview-safety checks.

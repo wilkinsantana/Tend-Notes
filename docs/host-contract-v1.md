@@ -90,8 +90,26 @@ while setup is open. Notebook setup requires read/write permissions; backup
 setup requires read/backup. Each host operation rechecks access, including
 nested provider discovery, folder creation, connection setup, and scanning.
 
-The host reuses its storage forms and encrypted connections. Setup records its
-Files library and source together, resumes an empty notebook, and treats an
-identical retry as the same location. Conflicting existing folders are preserved.
-Neither setup method starts a backup or changes the schedule. Older hosts show
-an update message instead of redirecting users into a different settings panel.
+Notebook setup creates a host-managed folder on the positively verified local
+Linux host by default. It offers an explicit alternate-server choice with a
+storage-loss warning. It never accepts a notebook filesystem path or drive ID.
+The fixed preparation worker refuses symlinks, unsafe ownership/permissions, and
+unrelated existing contents. Notebook folders use owner-only permissions and
+live outside the replaceable panel container. The host atomically registers
+encrypted drive metadata and an owner-bound Files library/source. Identical
+retries resume the same notebook and reindex its surviving Markdown. Existing
+manually connected libraries remain readable/editable.
+
+Managed notebook drives are internal: ordinary drive pickers, retargeting, and
+cross-account source attachment cannot repurpose them. This is not an isolation
+boundary against host or panel administrators. Unsupported local transports,
+including Docker Desktop VM storage, require explicit selection of another
+verified Linux server; they never silently redirect storage.
+
+Backup setup separately reuses storage forms and encrypted connections. It
+returns an existing destination or connects a new drive inside Notes. A managed
+notebook folder cannot serve as its own backup destination. Backup registration
+preserves conflicting existing locations and safely resumes identical retries.
+Neither setup method starts a backup or changes the schedule. Notes host folders
+need their own backup; the panel database/data volume is not a document backup.
+Older hosts show an update message if the setup capability is unavailable.

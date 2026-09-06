@@ -1,5 +1,5 @@
 {
-  "schema": 2, "id": "host.tend.notes", "name": "TEND Notes", "version": "0.1.0",
+  "schema": 2, "id": "host.tend.notes", "name": "TEND Notes", "version": "0.1.1",
   "author": "TEND Notes contributors", "license": "MIT", "category": "productivity",
   "description": "A quiet space for your thoughts. Write, organize, and keep your notes in Markdown.",
   "icon": "icon.svg",

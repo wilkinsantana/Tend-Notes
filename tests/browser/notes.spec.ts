@@ -201,8 +201,12 @@ test('notebook and backup destination setup stay inside Notes and preserve cance
   await page.setViewportSize({width:390,height:780}); await page.goto('/?empty');
   await page.getByRole('button',{name:'Set up your notebook'}).click();
   const setup=page.getByRole('dialog',{name:'Set up your notebook'});
-  await setup.getByLabel('Notebook name').fill('Travel ideas');
-  await setup.getByRole('button',{name:'Use sample notebook'}).click();
+  await expect(setup.getByText('This Tend server · Recommended')).toBeVisible();
+  await expect(setup.getByRole('textbox')).toHaveCount(0);
+  await expect(setup.getByRole('combobox')).toHaveCount(0);
+  await setup.getByRole('button',{name:'Use a different server'}).click();
+  await expect(setup.getByText(/Removing or replacing this server can cause data loss/)).toBeVisible();
+  await setup.getByRole('button',{name:'Start writing'}).click();
   await expect(page.getByRole('button',{name:'New note',exact:true})).toBeEnabled();
   await page.getByRole('button',{name:'Export & backups',exact:true}).click();
   const backups=page.getByRole('dialog',{name:'Export and backups'});
