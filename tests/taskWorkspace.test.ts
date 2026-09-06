@@ -5,7 +5,7 @@ import type { Document, Documents, Library } from '../src/host';
 function fixture() {
   const library: Library = { id: 'a', name: 'Home', canCreate: true };
   const revision = (content: string) => new Bun.CryptoHasher('sha256').update(content).digest('hex');
-  const doc = (id: string, content: string, libraryId = 'a'): Document => ({ id, libraryId, content, name: id+'.md', revision: revision(content), size: content.length, modifiedAt: 0 });
+  const doc = (id: string, content: string, libraryId = 'a', canWrite?: boolean): Document => ({ id, libraryId, content, name: id+'.md', revision: revision(content), size: content.length, modifiedAt: 0, canWrite });
   const documents = new Map([['one', doc('one', '# Shopping\n- [ ] Milk\n- [ ] Milk\n')], ['two', doc('two', '- [x] Sent\n', 'b')]]);
   const libraries = [library, { id: 'b', name: 'Work', canCreate: true }];
   let saves = 0;
@@ -19,7 +19,7 @@ function fixture() {
     async save(id: string, input: {content:string; revision:string}) {
       saves++; const old = documents.get(id)!;
       if (old.revision !== input.revision) throw Object.assign(new Error('Conflict'), {status:409});
-      const saved = doc(id, input.content, old.libraryId); documents.set(id, saved); return saved;
+      const saved = doc(id, input.content, old.libraryId, old.canWrite); documents.set(id, saved); return saved;
     },
   } as unknown as Documents;
   let state: TaskState;
@@ -83,6 +83,41 @@ test('read-only notebooks and disappeared documents fail safely', async () => {
   f.documents.delete('two');
   expect(await f.workspace.open(f.state.rows.find(r=>r.noteId==='two')!.key)).toBeNull();
   expect(f.state.errors[0]).toBe('Not found');
+});
+
+test('document write capability overrides create capability and older hosts fall back', async () => {
+  const f=fixture();
+  f.libraries[0].canCreate=false;
+  f.documents.set('one',f.doc('one','# Shopping\n- [ ] Milk\n- [ ] Milk\n','a',true));
+  f.documents.set('two',f.doc('two','- [x] Sent\n','b',false));
+  await f.workspace.refresh();
+  const personal=f.state.rows.find(row=>row.noteId==='one')!;
+  const work=f.state.rows.find(row=>row.noteId==='two')!;
+  expect(personal.canWrite).toBe(true);
+  expect(work.canWrite).toBe(false);
+  expect(await f.workspace.toggle(personal.key,true)).not.toBeNull();
+  expect(await f.workspace.toggle(work.key,false)).toBeNull();
+  expect(f.saves).toBe(1);
+
+  f.documents.set('one',f.doc('one','- [ ] Personal\n','a'));
+  f.documents.set('two',f.doc('two','- [ ] Work\n','b'));
+  await f.workspace.refresh();
+  expect(f.state.rows.find(row=>row.noteId==='one')!.canWrite).toBe(false);
+  expect(f.state.rows.find(row=>row.noteId==='two')!.canWrite).toBe(true);
+});
+
+test('permission revoked by the latest read prevents a save and preserves content', async () => {
+  const f=fixture();
+  f.documents.set('one',f.doc('one','# Shopping\n- [ ] Milk\n- [ ] Milk\n','a',true));
+  await f.workspace.refresh();
+  const key=f.state.rows.find(row=>row.noteId==='one')!.key;
+  const before=f.documents.get('one')!;
+  f.documents.set('one',{...before,canWrite:false});
+  expect(await f.workspace.toggle(key,true)).toBeNull();
+  expect(f.saves).toBe(0);
+  expect(f.documents.get('one')!.content).toBe(before.content);
+  expect(f.state.rows.find(row=>row.key===key)!.checked).toBe(false);
+  expect(f.state.errors[0]).toContain('Editing is unavailable for this note');
 });
 
 test('partial read failure remains explicit alongside successfully loaded tasks', async () => {

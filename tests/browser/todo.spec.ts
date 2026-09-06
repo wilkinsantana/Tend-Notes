@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 const storageKey='tend-notes:demo-documents';
-async function seed(page:Page, entries=[{id:'shopping',libraryId:'personal',name:'Shopping.md',content:'# Groceries\n- [ ] Milk\n- [ ] Milk\n- [x] Bread\n'},{id:'meeting',libraryId:'work',name:'Meeting.md',content:'## Actions\n- [ ] Send agenda\n\n```md\n- [ ] Example only\n```\n'}]) {
+async function seed(page:Page, entries:Array<{id:string;libraryId:string;name:string;content:string;canWrite?:boolean}>=[{id:'shopping',libraryId:'personal',name:'Shopping.md',content:'# Groceries\n- [ ] Milk\n- [ ] Milk\n- [x] Bread\n'},{id:'meeting',libraryId:'work',name:'Meeting.md',content:'## Actions\n- [ ] Send agenda\n\n```md\n- [ ] Example only\n```\n'}]) {
   await page.goto('/');
   await page.evaluate(async entries=>{
     const docs=[];
@@ -82,6 +82,20 @@ test('narrow ToDo supports keyboard, search, read-only tasks, transparency and r
   await expect(page.getByRole('checkbox')).toHaveCount(1);
   await page.getByRole('button',{name:'Back to Notes'}).focus();await page.keyboard.press('Enter');
   await expect(page.getByRole('button',{name:/^ToDo/})).toBeFocused();
+});
+
+test('ToDo uses per-note editing permission independently of notebook creation',async({page})=>{
+  await seed(page,[{id:'writable',libraryId:'personal',name:'Writable.md',content:'- [ ] Allowed\n',canWrite:true}]);
+  await page.goto('/?unconnected');await enter(page);
+  const allowed=page.getByRole('checkbox',{name:'Mark complete: Allowed'});
+  await expect(allowed).toBeEnabled();await allowed.click();
+  expect((await docs(page))[0].content).toBe('- [x] Allowed\n');
+
+  await page.evaluate(async()=>{const items=JSON.parse(localStorage.getItem('tend-notes:demo-documents')!);items[0].content='- [ ] Blocked\n';items[0].canWrite=false;const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(items[0].content));items[0].revision=[...new Uint8Array(hash)].map(n=>n.toString(16).padStart(2,'0')).join('');localStorage.setItem('tend-notes:demo-documents',JSON.stringify(items));});
+  await page.goto('/');await enter(page);
+  const blocked=page.getByRole('checkbox',{name:'Mark complete: Blocked'});
+  await expect(blocked).toBeDisabled();
+  await expect(blocked.locator('..')).toHaveAttribute('title','Editing is unavailable for this note');
 });
 
 test('late reads from a closed ToDo scan cannot change the next editor',async({page})=>{

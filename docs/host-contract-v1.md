@@ -11,6 +11,14 @@ resolves paths, providers, server connections, authentication, and credentials.
 Every call rechecks that the official reviewed package is enabled and permitted.
 A native extension is trusted panel-origin JavaScript, not a security sandbox.
 
+New hosts include `canWrite` on documents returned by read, create, save, and
+optional rename. It is the host's current advisory permission hint for that document.
+Clients use an explicit value even when it differs from `Library.canCreate`;
+older hosts that omit it fall back conservatively to `canCreate`. The library
+field means only that exactly one source can accept a new note and is not
+per-document edit authority. Mutation endpoints always reauthorize and remain
+authoritative.
+
 Canonical documents use the existing Files Documents index and source folders.
 Content is UTF-8 Markdown, at most 1 MB. A revision is the SHA-256 of exact file
 bytes. Save and delete require that revision; HTTP 409 preserves the draft.
@@ -169,12 +177,14 @@ bundled Markdown lexer's task semantics while preserving original line endings
 and organization headers. Changing a task replaces one marker character.
 
 Before writing, the client rereads the note and requires both the same revision
-and exact original content. Save still supplies the expected revision for the
-host's atomic conflict check. Only an exact whole-document match to intended
-bytes acknowledges a prior lost response without another write. A moved,
-renamed, deleted, or changed source needs refresh; no fuzzy reconciliation is
-performed. Source navigation uses the same snapshot check before selecting the
-checkbox. The current editor is flushed and frozen before entering ToDo.
+and exact original content. It also honors the latest `canWrite` hint before
+attempting save, while the save endpoint remains the final authorization check.
+Save still supplies the expected revision for the host's atomic conflict check.
+Only an exact whole-document match to intended bytes acknowledges a prior lost
+response without another write. A moved, renamed, deleted, or changed source
+needs refresh; no fuzzy reconciliation is performed. Source navigation uses the
+same snapshot check before selecting the checkbox. The current editor is flushed
+and frozen before entering ToDo.
 
 Scanning is sequential, cancellable during reads or worker parsing, and bounded at 10,000
 notes and 20 MiB of retained source text. Late scan responses cannot replace a

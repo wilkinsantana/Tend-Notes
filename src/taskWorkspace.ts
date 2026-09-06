@@ -10,6 +10,7 @@ export interface TaskState { rows: TaskRow[]; loading: boolean; scanned: number;
 interface Snapshot { document: Document; library: Library; tasks: MarkdownTask[] }
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'The connection could not be confirmed.';
 const stale = () => new Error('This note changed since ToDo was refreshed. Refresh tasks and try again; nothing was overwritten.');
+const canWrite = (document: Document, library: Library) => document.canWrite ?? library.canCreate;
 
 /** Disposable, in-memory projection. A task is identified by document + exact
  * revision + source offset, never by its label. No task survives a revision by
@@ -30,7 +31,7 @@ export class TaskWorkspace {
   private rows(snapshot: Snapshot): TaskRow[] {
     return snapshot.tasks.map(task => ({ key: this.key(snapshot.document, task), noteId: snapshot.document.id,
       noteName: snapshot.document.name, libraryName: snapshot.library.name, text: task.text,
-      checked: task.checked, line: task.line, canWrite: snapshot.library.canCreate }));
+      checked: task.checked, line: task.line, canWrite: canWrite(snapshot.document, snapshot.library) }));
   }
   cancel() { this.generation++; this.processor.dispose(); this.snapshots.clear(); this.state = { rows: [], loading: false, scanned: 0, errors: [], busy: false }; }
   async refresh() {
@@ -104,7 +105,7 @@ export class TaskWorkspace {
     this.state.busy = true; this.emit();
     try {
       const { snapshot, task } = this.resolve(key);
-      if (!snapshot.library.canCreate) throw new Error('This notebook is read-only. Open its note to see the task.');
+      if (!canWrite(snapshot.document, snapshot.library)) throw new Error('Editing is unavailable for this note. Open it to view the task.');
       const content = await this.processor.setChecked(snapshot.document.content, task, checked);
       const latest = await this.api.read(snapshot.document.id);
       if (latest.id !== snapshot.document.id || latest.libraryId !== snapshot.document.libraryId) throw stale();
@@ -114,6 +115,7 @@ export class TaskWorkspace {
       if (latest.content === content) saved = latest;
       else {
         if (latest.revision !== snapshot.document.revision || latest.content !== snapshot.document.content) throw stale();
+        if (!canWrite(latest, snapshot.library)) throw new Error('Editing is unavailable for this note. Open it to view the task.');
         saved = await this.api.save(latest.id, { content, revision: latest.revision });
         if (saved.id !== latest.id || saved.libraryId !== latest.libraryId || saved.content !== content) throw new Error('The task save could not be confirmed. Refresh before trying again.');
       }

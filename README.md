@@ -102,7 +102,9 @@ The view scans saved notes when opened or refreshed. Checklist parsing runs in a
 background worker so large notes do not block typing or cancelling a scan.
 Search and filters cover the complete loaded collection; Prev/Next pages show
 100 tasks at a time without dropping the other results. It does not scan hidden
-code examples as tasks, and read-only notebooks remain viewable. Disconnected
+code examples as tasks. Notes with editing unavailable remain viewable. Updated
+hosts allow task edits in notebooks with multiple connected folders; choosing
+one creation destination is only necessary for adding new notes. Disconnected
 sources and partial results are shown explicitly. A scan can be cancelled by
 returning to Notes. Very large collections are bounded at 10,000 scanned notes
 and 20 MiB of retained task-bearing Markdown per view, with a visible incomplete

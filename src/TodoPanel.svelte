@@ -151,7 +151,7 @@
               <ul>
                 {#each note.rows as row (row.key)}
                   <li class:completed={row.checked}>
-                    <label class="task-check" title={row.canWrite ? undefined : 'You only have permission to view this note'}>
+                    <label class="task-check" title={row.canWrite ? undefined : 'Editing is unavailable for this note'}>
                       <input type="checkbox" checked={row.checked} disabled={busy || loading || !row.canWrite} onchange={(event) => toggle(event, row)} aria-label={`${row.checked ? 'Mark open' : 'Mark complete'}: ${row.text}`} />
                       <span class="check-icon" aria-hidden="true">
                         {#if row.checked}<CheckCircle2 size={20} />{:else}<Circle size={20} />{/if}
