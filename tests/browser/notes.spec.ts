@@ -120,9 +120,16 @@ test('Tend color tokens update immediately without remounting or losing text', a
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await editor.fill('Keep my writing while themes change');
   const app=page.locator('.notes-app');
-  await expect(app).toHaveCSS('background-color','rgb(21, 27, 25)');
+  // Compare rendered RGBA, independent of rgb()/color(srgb) serialization.
+  const background=()=>app.evaluate(element=>{
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
+    const context=canvas.getContext('2d')!;
+    context.fillStyle=getComputedStyle(element).backgroundColor;context.fillRect(0,0,1,1);
+    return Array.from(context.getImageData(0,0,1,1).data);
+  });
+  await expect.poll(background).toEqual([21,27,25,255]);
   await page.getByRole('button',{name:'Preview light theme'}).click();
-  await expect(app).toHaveCSS('background-color','rgb(250, 251, 248)');
+  await expect.poll(background).toEqual([250,251,248,255]);
   await expect(editor).toHaveValue('Keep my writing while themes change');
   await page.evaluate(()=>{document.documentElement.style.setProperty('--color-primary','#9966ff');document.documentElement.style.setProperty('--color-primary-content','#18082c');});
   await expect(page.getByRole('button',{name:'New note',exact:true})).toHaveCSS('background-color','rgb(153, 102, 255)');
