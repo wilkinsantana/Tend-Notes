@@ -28,6 +28,24 @@
   let filterTools = $state<HTMLDivElement>();
   let sidebarPopover = $state<'color' | 'sort' | 'tags' | null>(null);
   let filterTrigger: HTMLButtonElement | null = null;
+  let pointerSelection = false;
+  function selectionFocus(node: HTMLElement) {
+    const pointer = () => { pointerSelection = true; };
+    const keyboard = (event: KeyboardEvent) => {
+      if (!['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) pointerSelection = false;
+    };
+    const change = (event: Event) => {
+      if (pointerSelection && event.target instanceof HTMLSelectElement) event.target.blur();
+    };
+    node.addEventListener('pointerdown', pointer, true);
+    node.addEventListener('keydown', keyboard, true);
+    node.addEventListener('change', change);
+    return { destroy() {
+      node.removeEventListener('pointerdown', pointer, true);
+      node.removeEventListener('keydown', keyboard, true);
+      node.removeEventListener('change', change);
+    } };
+  }
   async function toggleSearch() {
     sidebarPopover = null;
     searchOpen = !searchOpen;
@@ -37,7 +55,7 @@
   }
   function closeFilter(restoreFocus = false) {
     sidebarPopover = null;
-    if (restoreFocus) filterTrigger?.focus();
+    if (restoreFocus && !pointerSelection) filterTrigger?.focus();
   }
   async function toggleFilter(kind: 'color' | 'sort' | 'tags', event: MouseEvent) {
     filterTrigger = event.currentTarget as HTMLButtonElement;
@@ -744,7 +762,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- Keyboard shortcuts belong to this extension's focused panel. -->
-<div class="notes-app" class:sidebar-hidden={!sidebar || focusMode || todoOpen || trashOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="TEND Notes" tabindex="-1">
+<div class="notes-app" use:selectionFocus class:sidebar-hidden={!sidebar || focusMode || todoOpen || trashOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="TEND Notes" tabindex="-1">
   {#if !ready}
     <div class="welcome"><BookOpen size={44}/><h1>TEND Notes</h1><p>Update Tend to use your new notes space.</p><p class="muted">This extension needs Tend’s Documents editing support.</p></div>
   {:else if loading}

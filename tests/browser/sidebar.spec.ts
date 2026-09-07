@@ -130,3 +130,36 @@ test('narrow sidebar does not overflow and themed transparent popovers stay read
   expect(colors.width).toBeLessThanOrEqual(colors.asideWidth);
   await expect(popover.getByRole('button', { name: 'Sage' })).toBeVisible();
 });
+
+
+test('pointer selections release focus while keyboard selections retain their place', async ({ page }) => {
+  await seed(page); await page.goto('/');
+  const aside = sidebar(page);
+  const notebook = aside.getByLabel('Notebook', { exact: true });
+  // A pointer-opened native select emits change when an option is chosen.
+  await notebook.dispatchEvent('pointerdown');
+  await notebook.focus(); await notebook.selectOption('work');
+  await expect(notebook).not.toBeFocused();
+  await expect(notebook).toBeEnabled();
+  await notebook.focus(); await notebook.press('Tab');
+  await expect(aside.getByRole('button', { name: 'Search notes', exact: true })).toBeFocused();
+  const sort = aside.getByRole('button', { name: 'Sort notes', exact: true });
+  await sort.click(); await aside.getByRole('button', { name: 'Title A–Z', exact: true }).click();
+  await expect(sort).not.toBeFocused();
+  await expect(sort).toHaveAttribute('aria-expanded', 'false');
+  await sort.focus(); await sort.press('Enter');
+  await aside.getByRole('button', { name: 'Recently edited', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(sort).toBeFocused();
+  await expect(sort).toHaveAttribute('aria-expanded', 'false');
+  expect(await sort.evaluate(node => node.matches(':focus-visible'))).toBe(true);
+  await aside.getByRole('button', { name: 'Export & backups', exact: true }).click();
+  const scope = page.getByLabel('Include', { exact: true });
+  await scope.dispatchEvent('pointerdown'); await scope.focus();
+  await scope.selectOption('current');
+  await expect(scope).not.toBeFocused();
+  await scope.focus(); await scope.press('ArrowUp');
+  await expect(scope).toHaveValue('all');
+  await expect(scope).toBeFocused();
+  expect(await scope.evaluate(node => node.matches(':focus-visible'))).toBe(true);
+});
