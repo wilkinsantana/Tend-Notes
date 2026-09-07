@@ -186,3 +186,17 @@ and the remaining approved milestones are still pending.
 This is one writing improvement within the approved roadmap. Durable version
 history, live formatted writing, offline synchronization, and mobile acceptance
 remain unfinished.
+
+
+## 0.7.5 — Find a thought without leaving the note
+
+- Find in note opens a compact, temporary toolbar with literal search, optional
+  case matching, highlighted matches, a count, and previous/next navigation.
+- Ctrl/Cmd+F opens it from the editor. Enter and Shift+Enter navigate; Escape
+  returns to writing. Selected text can seed the query.
+- Highlights follow soft wrapping, scrolling, split layouts, and Tend themes.
+  Searching uses the unsaved draft without editing it or adding Undo steps.
+- No host permission, account, schema, or stored search history is added.
+
+This is a writing/navigation improvement. Durable version history, live formatted
+writing, Notes-only PWA and offline synchronization remain unfinished.
