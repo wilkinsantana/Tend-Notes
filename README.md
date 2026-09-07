@@ -8,7 +8,7 @@ alongside Sites. It runs inside Tend in the browser and desktop app.
 
 - Full-text searchable notes backed by your Documents libraries.
 - Portable tags, pinned notes, gentle color labels, and quick sidebar filters.
-- Markdown editor, formatting shortcuts, a note outline, in-note search, focus mode, and a safe reading preview.
+- Markdown source and optional formatted writing, formatting shortcuts, a note outline, in-note search, focus mode, and a safe reading preview.
 - Live Tend theme colors and panel transparency, with readable menus and dialogs.
 - Quick capture, automatic saving, visible status, and conflict protection.
 - Reusable grocery, packing, meeting, daily-plan, project, and checklist templates.
@@ -276,3 +276,12 @@ Export Markdown downloads the text file. **Export & backups** prepares a ZIP
 containing your notes and their uploaded attachments, with relative links intact.
 Connected-drive and automatic backups use the same complete archive. Linked
 external media remains a link and needs its original service to stay available.
+
+## Formatted writing
+
+Use the **Formatted writing** icon in the formatting toolbar to style headings,
+emphasis, links and code while you write. Markdown symbols remain editable.
+Toggle it again to return to plain source; Split and Preview remain available.
+Both presentations share Undo/Redo, search, media insertion and autosave.
+Switching presentation never saves a note by itself. The optional editor loads
+only when requested, keeping ordinary capture lightweight.

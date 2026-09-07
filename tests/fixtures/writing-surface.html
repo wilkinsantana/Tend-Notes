@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Writing surface fixture</title>
+<style>body{margin:0;background:#151b19;--ink:#d8e3df;--accent:#66b798;--wash:#1d2622;--soft:#93a49c;font-family:system-ui}#surface{height:100vh}</style>
+<div id="surface"></div>
+<script type="module">
+import { WritingSurface } from '/src/writingSurface.ts';
+import { EditorHistory } from '/src/editorHistory.ts';
+let body='# A quiet place to write\n\nKeep **important thoughts** close, and *make room for ideas*.\n\n1. First thought';
+let history=new EditorHistory(body);
+let changes=0;
+const surface=new WritingSurface(document.querySelector('#surface'),{
+ body,
+ onChange(change){changes++;body=change.body;history.record(body,change.before,change.after,change.key)},
+ onUndo(){const step=history.undo();if(step){body=step.body;surface.setBody(body,step)}},
+ onRedo(){const step=history.redo();if(step){body=step.body;surface.setBody(body,step)}},
+});
+window.writingProbe={surface,get changes(){return changes},reset(next){body=next;history=new EditorHistory(next);surface.setBody(next,{start:0,end:0});changes=0}};
+</script></html>

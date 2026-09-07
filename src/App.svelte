@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree } from 'lucide-svelte';
+  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type } from 'lucide-svelte';
   import type { Host, Library, Note, Document, Documents } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import Preview from './Preview.svelte';
   import EditorFind from './EditorFind.svelte';
   import FindHighlights from './FindHighlights.svelte';
+  import WritingEditor from './WritingEditor.svelte';
+  import type { WritingSurface } from './writingSurface';
   import type { TextMatch } from './find';
   import TemplatePicker from './TemplatePicker.svelte';
   import TodoPanel from './TodoPanel.svelte';
@@ -128,6 +130,7 @@
     if (!target) return;
     if (focus) target.focus();
     target.setSelectionRange(start, end);
+    if (!(target instanceof HTMLTextAreaElement)) return;
     // Measure the same text layout, including soft wrapping and the active theme font.
     const style = getComputedStyle(target);
     const mirror = document.createElement('div');
@@ -228,12 +231,33 @@
   let actionError = $state('');
   let quickCapturedId = $state('');
   let mediaKind = $state<'image' | 'youtube' | 'audio' | null>(null);
-  let mediaTarget = $state<{id: string; start: number; end: number; content: string} | null>(null);
+  let mediaTarget = $state<{id: string; start: number; end: number; content: string; body: string} | null>(null);
 
   let reloadOpen = $state(false);
   let deleting = $state(false);
   let recoveries = $state<Array<Draft & { key: string }>>([]);
-  let editor = $state<HTMLTextAreaElement>();
+  let sourceEditor = $state<HTMLTextAreaElement>();
+  let writingSurface = $state<WritingSurface>();
+  let formattedWriting = $state(false);
+  const editor = $derived(formattedWriting ? writingSurface : sourceEditor);
+  let writingLoading = $state(false);
+  let Surface = $state<typeof import('./writingSurface').WritingSurface>();
+  async function toggleWriting() {
+    if (writingLoading) return;
+    const documentId = view?.document.id;
+    if (!formattedWriting && !Surface) {
+      writingLoading = true;
+      try { Surface = (await import('./writingSurface')).WritingSurface; }
+      catch { error = 'Formatted writing could not start. Your Markdown is still here; try again.'; return; }
+      finally { writingLoading = false; }
+      if (!alive || view?.document.id !== documentId || mode === 'preview') return;
+    }
+    const selected = editor ? { start: editor.selectionStart, end: editor.selectionEnd } : null;
+    formattedWriting = !formattedWriting;
+    await tick();
+    editor?.focus();
+    if (selected) editor?.setSelectionRange(selected.start, selected.end);
+  }
   let editorHistory: EditorHistory | null = null;
   let historyCanUndo = $state(false);
   let historyCanRedo = $state(false);
@@ -458,12 +482,7 @@
     const sourcePosition = Math.max(0, task.offset - (source.content.length - body.length));
     // HTML textareas normalize CRLF/CR; source offsets preserve original bytes.
     const position = body.slice(0, sourcePosition).replace(/\r\n?/g, '\n').length;
-    editor?.focus(); editor?.setSelectionRange(position, position + 1);
-    if (editor) {
-      const line = body.slice(0, sourcePosition).replace(/\r\n?/g, '\n').split('\n').length;
-      const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 26;
-      editor.scrollTop = Math.max(0, (line - 3) * lineHeight);
-    }
+    await revealSelection(position, position + 1, true);
     await loadList();
   }
   async function changeLibrary(id: string) {
@@ -791,7 +810,7 @@
   function format(before: string, after = '', prefix = false) {
     if (!view || !editor || opening || creating || deleting || actionBusy || deletionUncertain) return;
     const selected = { start: editor.selectionStart, end: editor.selectionEnd };
-    const result = editMarkdown(parsed.body, selected.start, selected.end, before, after, prefix);
+    const result = editMarkdown(editor.value, selected.start, selected.end, before, after, prefix);
     commitEditorBody(result.content, selected, { start: result.start, end: result.end });
     void tick().then(() => { editor?.focus(); editor?.setSelectionRange(result.start, result.end); });
   }
@@ -849,14 +868,14 @@
   }
   function openMedia(kind: 'image' | 'youtube' | 'audio') {
     if (!view || deletionUncertain) return;
-    mediaTarget = {id: view.document.id, content: view.content, start: editor?.selectionStart ?? parsed.body.length, end: editor?.selectionEnd ?? parsed.body.length};
+    mediaTarget = {id: view.document.id, content: view.content, body: editor?.value ?? parsed.body, start: editor?.selectionStart ?? parsed.body.length, end: editor?.selectionEnd ?? parsed.body.length};
     mediaKind = kind;
   }
   function insertMedia(markdown: string) {
     if (!view || !mediaTarget || view.document.id !== mediaTarget.id || view.content !== mediaTarget.content) throw new Error('Open the original note to insert this attachment.');
-    const {start, end} = mediaTarget;
+    const {start, end, body} = mediaTarget;
     const inserted = '\n' + markdown + '\n';
-    commitEditorBody(parsed.body.slice(0, start) + inserted + parsed.body.slice(end), { start, end }, { start: start + inserted.length, end: start + inserted.length });
+    commitEditorBody(body.slice(0, start) + inserted + body.slice(end), { start, end }, { start: start + inserted.length, end: start + inserted.length });
     mediaKind = null;
   }
   function shortcuts(event: KeyboardEvent) {
@@ -864,7 +883,7 @@
     if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind) return;
     if (event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); void quickCapture(); }
     if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
-    if (event.target !== editor) return;
+    if (event.target !== sourceEditor && !writingSurface?.contains(event.target)) return;
     if (event.key.toLowerCase() === 'f' && !event.altKey && !event.shiftKey) { event.preventDefault(); if (!findOpen) toggleFind(); else findPanel?.focusQuery(); return; }
     if (event.key.toLowerCase() === 'z') { event.preventDefault(); applyHistory(event.shiftKey ? 'redo' : 'undo'); return; }
     if (event.key.toLowerCase() === 'y') { event.preventDefault(); applyHistory('redo'); return; }
@@ -984,6 +1003,7 @@
         {#if organizeOpen}<section class="organization" aria-label="Note organization"><div class="tag-editor"><div class="note-tag-chips">{#each parsed.organization.tags as tag}<span>#{tag}<button class="icon" aria-label={`Remove tag ${tag}`} onclick={() => organize({tags:parsed.organization.tags.filter(t => t !== tag)})}><X size={11}/></button></span>{/each}</div><form onsubmit={e => { e.preventDefault(); addTag(); }}><input aria-label="Add tag" placeholder="Add a tag, e.g. work/ideas" bind:value={tagInput} maxlength="50"/><button class="quiet" type="submit" disabled={!tagInput.trim()}><Plus size={14}/> Add</button></form></div><div class="note-colors" aria-label="Note color">{#each COLORS as color}<button class="color-choice" data-note-color={color} class:chosen={parsed.organization.color === color} aria-label={color === 'none' ? 'No note color' : `${color} note color`} aria-pressed={parsed.organization.color === color} title={color === 'none' ? 'No color' : color} onclick={() => organize({color})}>{#if parsed.organization.color === color}<Check size={13}/>{/if}</button>{/each}</div></section>{/if}
         {#if view.error || view.recoveryError}<div class="notice error" role="alert"><div>{view.error || view.recoveryError}<div class="notice-actions">{#if view.conflict}<button class="quiet" onclick={() => reloadOpen = true}>Reload saved version</button><button class="quiet" onclick={() => beginCreate(view!.content, `${title(view!.document.name)} copy`)}>Save as new note</button>{:else}<button class="quiet" onclick={() => void save()}>Retry save</button>{/if}<button class="quiet" onclick={() => download(view!.content, view!.document.name)}>Export draft</button></div></div></div>{/if}
         {#if mode !== 'preview'}<div class="formatting" aria-label="Markdown formatting">
+          <button class="icon" class:chosen={formattedWriting} aria-label="Formatted writing" aria-pressed={formattedWriting} title={formattedWriting ? "Use plain Markdown source" : "Style Markdown while writing"} disabled={writingLoading} onclick={() => void toggleWriting()}>{#if writingLoading}<LoaderCircle size={16} class="spin"/>{:else}<Type size={16}/>{/if}</button>
           <button class="icon" title="Find in note (Ctrl/Cmd+F)" aria-label="Find in note" aria-expanded={findOpen} onclick={toggleFind}><Search size={16}/></button>
           <button class="icon" title="Undo (Ctrl+Z)" aria-label="Undo" onclick={() => applyHistory('undo')} disabled={!historyCanUndo || historyBlocked}><Undo2 size={16}/></button>
           <button class="icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" onclick={() => applyHistory('redo')} disabled={!historyCanRedo || historyBlocked}><Redo2 size={16}/></button>
@@ -1009,8 +1029,8 @@
         </div>{/if}
         {#if findOpen && mode !== 'preview'}<EditorFind bind:this={findPanel} body={editorBody} onmatches={(matches, activeStart) => { findMatches = matches; findActiveStart = activeStart; }} initialQuery={findInitialQuery} initialStart={findInitialStart} onselect={match => void revealSelection(match.start, match.end)} onclose={closeFind}/>{/if}
         <div class="writing" class:split={mode === 'split'} class:preview-only={mode === 'preview'}>
-          {#if mode !== 'preview'}<textarea class="editor" bind:this={editor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} oncompositionstart={() => { compositionKey = `composition:${++compositionSequence}`; }} oncompositionend={() => { compositionKey = null; pendingInput = null; }} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind} value={parsed.body} oninput={editorInput} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}
-          {#if findOpen && mode !== 'preview' && editor}<FindHighlights {editor} body={editorBody} matches={findMatches} activeStart={findActiveStart}/>{/if}
+          {#if mode !== 'preview'}{#if formattedWriting && Surface}{#key view.document.id}<WritingEditor {Surface} body={editorBody} readOnly={historyBlocked} matches={findOpen ? findMatches : []} activeStart={findActiveStart} bind:surface={writingSurface} onchange={change => commitEditorBody(change.body, change.before, change.after, change.key)} onundo={() => applyHistory('undo')} onredo={() => applyHistory('redo')}/>{/key}{:else}<textarea class="editor" bind:this={sourceEditor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} oncompositionstart={() => { compositionKey = `composition:${++compositionSequence}`; }} oncompositionend={() => { compositionKey = null; pendingInput = null; }} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind} value={parsed.body} oninput={editorInput} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}{/if}
+          {#if findOpen && mode !== 'preview' && !formattedWriting && sourceEditor}<FindHighlights editor={sourceEditor} body={editorBody} matches={findMatches} activeStart={findActiveStart}/>{/if}
           {#if mode !== 'edit'}<!-- svelte-ignore a11y_click_events_have_key_events --><!-- svelte-ignore a11y_no_static_element_interactions --><div class="preview"><Preview content={parsed.body} documents={host.documents!} noteId={view.document.id}/></div>{/if}
         </div>
         <footer><span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span><button class="save-status" onclick={() => void save()} disabled={view.saving || !view.dirty || view.conflict}>{#if view.saving}<LoaderCircle size={13} class="spin"/> Saving…{:else if view.dirty}<span class="unsaved-dot"></span>{view.error ? 'Not saved' : 'Save now'}{:else}<Check size={14}/> All changes saved{/if}</button></footer>

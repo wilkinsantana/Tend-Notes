@@ -200,3 +200,14 @@ remain unfinished.
 
 This is a writing/navigation improvement. Durable version history, live formatted
 writing, Notes-only PWA and offline synchronization remain unfinished.
+
+### Formatted writing (0.7.6)
+
+- Optional styled Markdown presentation in the compact formatting toolbar, loaded
+  on demand. Source, Split and rendered Preview remain available.
+- Shared existing Undo/Redo, list continuation, formatting/media insertion, task
+  source navigation, outline and Find with layout-aware highlights.
+- View changes and opening preserve saved bytes; existing draft, autosave and
+  conflict ownership remain unchanged. Dependencies ship with license notices.
+- Browser and composition checks do not replace real mobile keyboard and
+  screen-reader acceptance; the Notes-only PWA remains a separate pending gate.
