@@ -8,7 +8,7 @@ alongside Sites. It runs inside Tend in the browser and desktop app.
 
 - Full-text searchable notes backed by your Documents libraries.
 - Portable tags, pinned notes, gentle color labels, and quick sidebar filters.
-- Markdown editor, formatting shortcuts, focus mode, and a safe reading preview.
+- Markdown editor, formatting shortcuts, a note outline, focus mode, and a safe reading preview.
 - Live Tend theme colors and panel transparency, with readable menus and dialogs.
 - Quick capture, automatic saving, visible status, and conflict protection.
 - Reusable grocery, packing, meeting, daily-plan, project, and checklist templates.
@@ -72,6 +72,10 @@ Undo and Redo arrows in the formatting toolbar step through writing changes,
 including formatting and inserted media. Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z
 (or Ctrl+Y) redoes. This editing history belongs to the open note; browser
 recovery copies remain the separate way to recover an unsaved draft after reload.
+
+Use **Note outline** to find a section in a long note and jump to its heading
+in the editor. The outline follows your current draft, including unsaved writing,
+and does not change the note. Escape returns focus to the outline button.
 
 Preview supports common Markdown, lists, code, and tables. Embedded HTML is
 displayed safely; external images load only after a click. Links open only after you
@@ -225,7 +229,7 @@ bun run test
 bun run build
 ```
 
-`dist/tend-notes-0.3.0.zip` contains the native extension, integrity manifest,
+`dist/tend-notes-0.7.4.zip` contains the native extension, integrity manifest,
 license, and dependency notices. `bun run dev` opens the local demonstration;
 its clearly labeled sample notebook is for development only. Use
 `bun run test:browser` for interaction and preview-safety checks.

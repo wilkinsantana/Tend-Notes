@@ -172,3 +172,17 @@ protected. Available after installing the matching host and Notes updates.
 
 Version history, Trash-inclusive backups, live formatted writing, offline sync,
 and the remaining approved milestones are still pending.
+
+
+## 0.7.4 — Navigate long notes
+
+- A compact Note outline control opens a list of headings from the current
+  draft without adding a permanent sidebar or toolbar row.
+- Selecting a heading moves to its source in the editor without changing the
+  note. Keyboard dismissal restores focus to the control.
+- The outline is derived from ordinary Markdown and requires no extra host
+  permission, account, metadata, or storage.
+
+This is one writing improvement within the approved roadmap. Durable version
+history, live formatted writing, offline synchronization, and mobile acceptance
+remain unfinished.
