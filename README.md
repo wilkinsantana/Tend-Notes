@@ -68,6 +68,11 @@ a naming dialog; the shortcut is Ctrl/Cmd+Shift+N. After writing, **Use first
 line as title** suggests a name you can review before saving. It uses the same
 conflict protection as an ordinary rename and never replaces another note.
 
+Undo and Redo arrows in the formatting toolbar step through writing changes,
+including formatting and inserted media. Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z
+(or Ctrl+Y) redoes. This editing history belongs to the open note; browser
+recovery copies remain the separate way to recover an unsaved draft after reload.
+
 Preview supports common Markdown, lists, code, and tables. Embedded HTML is
 displayed safely; external images load only after a click. Links open only after you
 click them. No external writing service, tracking, or AI account is required.
@@ -80,7 +85,8 @@ tags appear when available. Color filters show swatches alongside their names.
 Hover over an icon for its label, or reach it with the keyboard.
 
 Open search beside the notebook selector. Escape closes search and clears its
-filter. Trash sits directly left of Refresh above the note list. Import and
+filter. Available browser recovery copies appear as a history icon with a count
+beside Trash, directly left of Refresh above the note list. Import and
 Export & backups remain together at the bottom.
 
 ## Start with Today

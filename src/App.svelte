@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow } from 'lucide-svelte';
+  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History } from 'lucide-svelte';
   import type { Host, Library, Note, Document, Documents } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import Preview from './Preview.svelte';
@@ -15,6 +15,7 @@
   import MediaDialog from './MediaDialog.svelte';
   import { editMarkdown } from './formatting';
   import { markdownNewline, type MarkdownNewline } from './keyboard';
+  import { EditorHistory, type EditorSelection } from './editorHistory';
   import BackupPanel from './BackupPanel.svelte';
   import { unpack, withBody, withOrganization, normalizeTag, COLORS, type Organization } from './organization';
   let { host }: { host: Host } = $props();
@@ -154,6 +155,12 @@
   let deleting = $state(false);
   let recoveries = $state<Array<Draft & { key: string }>>([]);
   let editor = $state<HTMLTextAreaElement>();
+  let editorHistory: EditorHistory | null = null;
+  let historyCanUndo = $state(false);
+  let historyCanRedo = $state(false);
+  let compositionKey: string | null = null;
+  let compositionSequence = 0;
+  let pendingInput: { selection: EditorSelection; key: string | null } | null = null;
   let filePicker = $state<HTMLInputElement>();
   let session: NoteSession | null = null;
   let drafts: Drafts;
@@ -163,6 +170,7 @@
   const ready = $derived(host.documents?.version === 1 && !!host.user);
   const trashSupported = $derived(host.documents?.trash?.version === 1);
   const deletionUncertain = $derived(deletePending && deleteRequest?.documentId === view?.document.id);
+  const historyBlocked = $derived(opening || creating || deleting || actionBusy || !!deletionUncertain || !!mediaKind);
   const selectedLibrary = $derived(libraries.find(l => l.id === libraryId));
   const parsed = $derived(unpack(view?.content ?? ''));
   const hasLoadedNotes = $derived(notes.length > 0);
@@ -416,7 +424,15 @@
   function filterTag(tag: string) { tagFilter = tagFilter === tag ? '' : tag; void loadList(); }
   function search() { clearTimeout(searchTimer); searchTimer = setTimeout(() => void loadList(), 200); }
   function connect(document: Document) {
-    session = new NoteSession(document, host.documents!, drafts, current => { if (alive) view = current; });
+    const history = new EditorHistory(unpack(document.content).body);
+    editorHistory = history; historyCanUndo = false; historyCanRedo = false; pendingInput = null;
+    session = new NoteSession(document, host.documents!, drafts, current => {
+      if (!alive) return;
+      view = current;
+      const body = unpack(current.content).body;
+      if (editorHistory === history && history.body !== body) history.sync(body);
+      updateHistoryState();
+    });
     view = { ...session.view }; mobileEditor = true; organizeOpen = false; tagInput = '';
   }
   async function open(note: Note) {
@@ -670,10 +686,30 @@
       session?.abandon(); drafts.remove(view.document.id); connect(document); reloadOpen = false; refreshDrafts();
     } catch (e) { error = message(e); reloadOpen = false; }
   }
+  function updateHistoryState() {
+    historyCanUndo = !!editorHistory?.canUndo;
+    historyCanRedo = !!editorHistory?.canRedo;
+  }
+  function commitEditorBody(content: string, before: EditorSelection | null, after: EditorSelection, key: string | null = null) {
+    if (!view || !session || !editorHistory || deletionUncertain) return false;
+    if (!editorHistory.record(content, before, after, key)) return false;
+    updateHistoryState();
+    session.edit(withBody(view.content, content));
+    return true;
+  }
+  function applyHistory(direction: 'undo' | 'redo') {
+    if (!view || !session || !editorHistory || historyBlocked) return;
+    const result = direction === 'undo' ? editorHistory.undo() : editorHistory.redo();
+    updateHistoryState();
+    if (!result) return;
+    session.edit(withBody(view.content, result.body));
+    void tick().then(() => { editor?.focus(); editor?.setSelectionRange(result.start, result.end); });
+  }
   function format(before: string, after = '', prefix = false) {
     if (!view || !editor || opening || creating || deleting || actionBusy || deletionUncertain) return;
-    const result = editMarkdown(parsed.body, editor.selectionStart, editor.selectionEnd, before, after, prefix);
-    session?.edit(withBody(view.content, result.content));
+    const selected = { start: editor.selectionStart, end: editor.selectionEnd };
+    const result = editMarkdown(parsed.body, selected.start, selected.end, before, after, prefix);
+    commitEditorBody(result.content, selected, { start: result.start, end: result.end });
     void tick().then(() => { editor?.focus(); editor?.setSelectionRange(result.start, result.end); });
   }
   let plainNewline = false;
@@ -681,12 +717,10 @@
     if (!editor || !view || editor.readOnly || !session) return;
     const field = editor;
     const expected = field.value.slice(0, edit.from) + edit.text + field.value.slice(edit.to);
-    field.setSelectionRange(edit.from, edit.to);
-    // insertText retains native undo; setRangeText is the fallback for older webviews.
-    try { document.execCommand(edit.text ? 'insertText' : 'delete', false, edit.text); } catch { /* Fall back below. */ }
-    if (field.value !== expected) field.setRangeText(edit.text, edit.from, edit.to, 'end');
-    field.setSelectionRange(edit.from + edit.text.length, edit.from + edit.text.length);
-    if (parsed.body !== field.value) session.edit(withBody(view.content, field.value));
+    const position = edit.from + edit.text.length;
+    commitEditorBody(expected, { start: edit.from, end: edit.to }, { start: position, end: position });
+    field.value = expected;
+    field.setSelectionRange(position, position);
   }
   function editorKeydown(event: KeyboardEvent) {
     plainNewline = false;
@@ -696,11 +730,39 @@
     if (edit) { event.preventDefault(); applyNewline(edit); }
   }
   function editorBeforeInput(event: InputEvent) {
-    if (!['insertLineBreak','insertParagraph'].includes(event.inputType)) return;
+    pendingInput = null;
+    if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
+      if (event.cancelable) {
+        event.preventDefault();
+        applyHistory(event.inputType === 'historyUndo' ? 'undo' : 'redo');
+      }
+      return;
+    }
+    if (!['insertLineBreak','insertParagraph'].includes(event.inputType)) { captureEditorInput(event); return; }
     if (plainNewline) { plainNewline = false; return; }
     if (!editor || editor.readOnly || event.isComposing || !event.cancelable) return;
     const edit = markdownNewline(editor.value, editor.selectionStart, editor.selectionEnd);
     if (edit) { event.preventDefault(); applyNewline(edit); }
+  }
+  function editorInput(event: Event) {
+    if (deletionUncertain || !editorHistory) return;
+    const field = event.currentTarget as HTMLTextAreaElement;
+    const inputType = (event as InputEvent).inputType;
+    if (inputType === 'historyUndo' || inputType === 'historyRedo') {
+      field.value = parsed.body;
+      applyHistory(inputType === 'historyUndo' ? 'undo' : 'redo');
+      return;
+    }
+    const before = pendingInput?.selection ?? null;
+    const key = pendingInput?.key ?? null;
+    pendingInput = null;
+    commitEditorBody(field.value, before, { start: field.selectionStart, end: field.selectionEnd }, key);
+  }
+  function captureEditorInput(event: InputEvent) {
+    if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') return;
+    if (!editor || editor.readOnly) { pendingInput = null; return; }
+    const key = compositionKey ?? (editor.selectionStart === editor.selectionEnd && ['insertText', 'deleteContentBackward', 'deleteContentForward'].includes(event.inputType) ? event.inputType : null);
+    pendingInput = { selection: { start: editor.selectionStart, end: editor.selectionEnd }, key };
   }
   function openMedia(kind: 'image' | 'youtube' | 'audio') {
     if (!view || deletionUncertain) return;
@@ -710,15 +772,18 @@
   function insertMedia(markdown: string) {
     if (!view || !mediaTarget || view.document.id !== mediaTarget.id || view.content !== mediaTarget.content) throw new Error('Open the original note to insert this attachment.');
     const {start, end} = mediaTarget;
-    session?.edit(withBody(view.content, parsed.body.slice(0, start) + '\n' + markdown + '\n' + parsed.body.slice(end)));
+    const inserted = '\n' + markdown + '\n';
+    commitEditorBody(parsed.body.slice(0, start) + inserted + parsed.body.slice(end), { start, end }, { start: start + inserted.length, end: start + inserted.length });
     mediaKind = null;
   }
   function shortcuts(event: KeyboardEvent) {
-    if (!(event.ctrlKey || event.metaKey)) return;
+    if (event.isComposing || !(event.ctrlKey || event.metaKey)) return;
     if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind) return;
     if (event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); void quickCapture(); }
     if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
     if (event.target !== editor) return;
+    if (event.key.toLowerCase() === 'z') { event.preventDefault(); applyHistory(event.shiftKey ? 'redo' : 'undo'); return; }
+    if (event.key.toLowerCase() === 'y') { event.preventDefault(); applyHistory('redo'); return; }
     if (event.key.toLowerCase() === 'b') { event.preventDefault(); format('**', '**'); }
     if (event.key.toLowerCase() === 'i') { event.preventDefault(); format('*', '*'); }
   }
@@ -799,8 +864,7 @@
           {:else}<div id="notes-tags" role="group" aria-label="Note tags"><span class="popover-label">FILTER BY TAG</span><div class="tag-filters">{#each facets.tags as tag}<button class:chosen={tagFilter === tag.name} aria-pressed={tagFilter === tag.name} onclick={() => { filterTag(tag.name); closeFilter(true); }}>#{tag.name}<small>{tag.count}</small></button>{/each}</div>{#if tagFilter}<button class="filter-option" onclick={() => { tagFilter = ''; closeFilter(true); void loadList(); }}><X size={14}/> Clear tag</button>{/if}</div>{/if}
         </div>{/if}
       </div>
-      {#if recoveries.length}<button class="quiet recovery-link" onclick={() => void showRecoveries()}>Recovery copies ({recoveries.length})</button>{/if}
-      <div class="list-heading"><span>{pinnedFilter ? 'PINNED NOTES' : 'YOUR NOTES'} <small>{pinnedFilter ? facets.pinned : facets.total}</small></span><div class="list-heading-actions">{#if !mobileEditor && hasLoadedNotes}<button class="icon continue-writing" aria-label="Continue writing" title="Continue writing" disabled={opening} onclick={() => void continueWriting()}><PenLine size={14}/></button>{/if}{#if trashSupported}<button class="icon" aria-label="Trash" title="Trash" onclick={() => void openTrash()} disabled={opening || actionBusy}><Trash2 size={14}/></button>{/if}<button class="icon" aria-label="Refresh notes" title="Refresh notes" onclick={() => { void loadList(); void buildSearch(libraryId); }} disabled={listLoading}><RefreshCw size={14} class={listLoading ? 'spin' : ''}/></button></div></div>
+      <div class="list-heading"><span>{pinnedFilter ? 'PINNED NOTES' : 'YOUR NOTES'} <small>{pinnedFilter ? facets.pinned : facets.total}</small></span><div class="list-heading-actions">{#if !mobileEditor && hasLoadedNotes}<button class="icon continue-writing" aria-label="Continue writing" title="Continue writing" disabled={opening} onclick={() => void continueWriting()}><PenLine size={14}/></button>{/if}{#if recoveries.length}<button class="icon recovery-copies" aria-label={`Recovery copies (${recoveries.length})`} title={`Recovery copies (${recoveries.length})`} onclick={() => void showRecoveries()} disabled={opening || creating || deleting}><History size={14}/><small>{recoveries.length}</small></button>{/if}{#if trashSupported}<button class="icon" aria-label="Trash" title="Trash" onclick={() => void openTrash()} disabled={opening || actionBusy}><Trash2 size={14}/></button>{/if}<button class="icon" aria-label="Refresh notes" title="Refresh notes" onclick={() => { void loadList(); void buildSearch(libraryId); }} disabled={listLoading}><RefreshCw size={14} class={listLoading ? 'spin' : ''}/></button></div></div>
       <div class="note-list" aria-label="Notes">
         {#each notes as note (note.id)}
           <div class="note" data-note-color={note.color ?? 'none'} class:selected={view?.document.id === note.id}>
@@ -836,6 +900,9 @@
         {#if organizeOpen}<section class="organization" aria-label="Note organization"><div class="tag-editor"><div class="note-tag-chips">{#each parsed.organization.tags as tag}<span>#{tag}<button class="icon" aria-label={`Remove tag ${tag}`} onclick={() => organize({tags:parsed.organization.tags.filter(t => t !== tag)})}><X size={11}/></button></span>{/each}</div><form onsubmit={e => { e.preventDefault(); addTag(); }}><input aria-label="Add tag" placeholder="Add a tag, e.g. work/ideas" bind:value={tagInput} maxlength="50"/><button class="quiet" type="submit" disabled={!tagInput.trim()}><Plus size={14}/> Add</button></form></div><div class="note-colors" aria-label="Note color">{#each COLORS as color}<button class="color-choice" data-note-color={color} class:chosen={parsed.organization.color === color} aria-label={color === 'none' ? 'No note color' : `${color} note color`} aria-pressed={parsed.organization.color === color} title={color === 'none' ? 'No color' : color} onclick={() => organize({color})}>{#if parsed.organization.color === color}<Check size={13}/>{/if}</button>{/each}</div></section>{/if}
         {#if view.error || view.recoveryError}<div class="notice error" role="alert"><div>{view.error || view.recoveryError}<div class="notice-actions">{#if view.conflict}<button class="quiet" onclick={() => reloadOpen = true}>Reload saved version</button><button class="quiet" onclick={() => beginCreate(view!.content, `${title(view!.document.name)} copy`)}>Save as new note</button>{:else}<button class="quiet" onclick={() => void save()}>Retry save</button>{/if}<button class="quiet" onclick={() => download(view!.content, view!.document.name)}>Export draft</button></div></div></div>{/if}
         {#if mode !== 'preview'}<div class="formatting" aria-label="Markdown formatting">
+          <button class="icon" title="Undo (Ctrl+Z)" aria-label="Undo" onclick={() => applyHistory('undo')} disabled={!historyCanUndo || historyBlocked}><Undo2 size={16}/></button>
+          <button class="icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" onclick={() => applyHistory('redo')} disabled={!historyCanRedo || historyBlocked}><Redo2 size={16}/></button>
+          <span></span>
           <select aria-label="Heading level" title="Heading level" value="" onchange={e => { if(e.currentTarget.value) format(e.currentTarget.value, '', true); e.currentTarget.value = ''; }}><option value="">Heading</option><option value="# ">Heading 1</option><option value="## ">Heading 2</option><option value="### ">Heading 3</option></select>
           <button class="icon" title="Bold (Ctrl+B)" aria-label="Bold" onclick={() => format('**', '**')}><Bold size={16}/></button>
           <button class="icon" title="Italic (Ctrl+I)" aria-label="Italic" onclick={() => format('*', '*')}><Italic size={16}/></button>
@@ -856,7 +923,7 @@
           <button class="icon" title="Audio · upload or record" aria-label="Insert audio" onclick={() => openMedia('audio')}><Mic size={17}/></button>
         </div>{/if}
         <div class="writing" class:split={mode === 'split'} class:preview-only={mode === 'preview'}>
-          {#if mode !== 'preview'}<textarea class="editor" bind:this={editor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind} value={parsed.body} oninput={e => { if (!deletionUncertain) session?.edit(withBody(view!.content, e.currentTarget.value)); }} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}
+          {#if mode !== 'preview'}<textarea class="editor" bind:this={editor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} oncompositionstart={() => { compositionKey = `composition:${++compositionSequence}`; }} oncompositionend={() => { compositionKey = null; pendingInput = null; }} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind} value={parsed.body} oninput={editorInput} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}
           {#if mode !== 'edit'}<!-- svelte-ignore a11y_click_events_have_key_events --><!-- svelte-ignore a11y_no_static_element_interactions --><div class="preview"><Preview content={parsed.body} documents={host.documents!} noteId={view.document.id}/></div>{/if}
         </div>
         <footer><span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span><button class="save-status" onclick={() => void save()} disabled={view.saving || !view.dirty || view.conflict}>{#if view.saving}<LoaderCircle size={13} class="spin"/> Saving…{:else if view.dirty}<span class="unsaved-dot"></span>{view.error ? 'Not saved' : 'Save now'}{:else}<Check size={14}/> All changes saved{/if}</button></footer>
@@ -904,7 +971,7 @@
   main{min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}header{height:60px;display:flex;align-items:center;gap:14px;padding:0 24px;border-bottom:1px solid var(--line);flex-shrink:0}.icon{width:30px;height:30px;border:0;display:inline-flex;align-items:center;justify-content:center;background:none;border-radius:6px;flex-shrink:0}.breadcrumb{font-size:11px;color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.suggest-title{display:inline-flex;align-items:center;gap:5px;border:0;border-radius:6px;background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent);padding:5px 8px;font-size:10px;white-space:nowrap}.view-modes{display:flex;gap:2px;margin-left:auto;padding:3px;background:var(--wash);border-radius:8px}.view-modes .active{background:var(--paper);box-shadow:0 1px 3px #0000000a}.welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:35px 28px;gap:17px;overflow:auto}.welcome-icon{width:76px;height:82px;display:grid;place-items:center;border-radius:22px;background:color-mix(in srgb,var(--accent) 8%,var(--paper));color:var(--accent);margin-bottom:10px;transform:rotate(-5deg)}.welcome h1{font-size:clamp(24px,3cqw,34px);font-weight:500;letter-spacing:-1px}.welcome p{max-width:420px;font-size:13px;line-height:1.85;color:var(--soft)}.welcome>small{font-size:10px;color:var(--soft);margin-top:20px}.welcome .quiet{margin-top:-10px;color:var(--soft)}.eyebrow{font-size:9px;letter-spacing:1.8px;font-weight:600;color:var(--soft)}.welcome .primary{margin-top:8px}.document-actions{display:flex;gap:4px;color:var(--soft)}.formatting{display:flex;align-items:center;gap:4px;padding:0 36px 13px;border-bottom:1px solid var(--line);color:var(--soft)}.formatting>span{width:1px;height:16px;background:var(--line);margin:0 6px}.writing{flex:1;min-height:120px;display:flex;overflow:hidden}.editor{display:block;resize:none;border:0;outline:none;flex:1;width:100%;min-width:0;padding:28px 42px;line-height:1.9!important;font-size:14px!important;background:transparent;color:var(--ink);tab-size:2}.editor::placeholder{color:color-mix(in srgb,var(--ink) 30%,transparent)}.preview{padding:28px 42px;overflow:auto;flex:1;min-width:0;overflow-wrap:anywhere;line-height:1.85}.split .editor,.split .preview{width:50%;padding:24px}.split .preview{border-left:1px solid var(--line)}.preview :global(h1),.preview :global(h2),.preview :global(h3){margin:1em 0 .6em;line-height:1.4}.preview :global(p){margin:0 0 1em}.preview :global(a){color:var(--accent);text-decoration:underline}.preview :global(pre){overflow:auto;background:var(--wash);padding:16px;border-radius:8px}.preview :global(blockquote){border-left:3px solid var(--accent);margin:1em 0;padding-left:18px;color:var(--soft)}.preview :global(table){border-collapse:collapse;width:100%;font-size:12px}.preview :global(th),.preview :global(td){border:1px solid var(--line);padding:8px}.preview :global(ul),.preview :global(ol){padding-left:22px}.preview :global(input){pointer-events:none}footer{height:41px;border-top:1px solid var(--line);padding:0 28px;display:flex;align-items:center;justify-content:space-between;font-size:10px;color:var(--soft);flex-shrink:0}.save-status{border:0;background:none;display:flex;align-items:center;gap:6px;font-size:10px}.save-status:disabled{opacity:1!important}.unsaved-dot{width:5px;height:5px;border-radius:50%;background:var(--warning)}.notice{margin:12px 24px 0;padding:12px 14px;border:1px solid color-mix(in srgb,var(--danger) 24%,transparent);border-radius:8px;display:flex;justify-content:space-between;font-size:12px;background:color-mix(in srgb,var(--danger) 5%,var(--paper))}.notice-actions{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}.recovery{margin:18px 24px;padding:16px;background:var(--wash);border-radius:10px;font-size:12px}.recovery p{color:var(--soft);font-size:11px;margin:3px 0 9px}.recovery>div{display:flex;align-items:center;justify-content:space-between}.sidebar-hidden{grid-template-columns:minmax(0,1fr)}.sidebar-hidden aside{display:none}.mobile-back{display:none}
   .notes-dialog-layer{position:absolute;inset:0;z-index:10;background:color-mix(in srgb,var(--paper) 60%,transparent);backdrop-filter:blur(3px);display:grid;place-items:center;padding:20px}.notes-dialog{position:relative;background:var(--paper);padding:32px;border-radius:16px;box-shadow:0 20px 80px #0003;width:min(400px,100%);max-height:100%;overflow:auto}.notes-dialog>.close{position:absolute;right:15px;top:15px}.notes-dialog> :global(svg){color:var(--accent)}.notes-dialog h2{font-size:23px;font-weight:500;letter-spacing:-.5px;margin:18px 0 10px}.notes-dialog p{font-size:12px;color:var(--soft);margin-bottom:22px}.notes-dialog form>label{display:block;font-size:12px;font-weight:550;margin:15px 0 8px}.notes-dialog input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;color:var(--ink);background:var(--wash)}.notes-dialog form>small{display:block;color:var(--soft);font-size:10px;margin:8px 0 22px}.notes-dialog .primary{width:100%}.dialog-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.dialog-actions button{border:1px solid var(--line)}.dialog-actions .danger{margin-top:0;border-color:transparent}.notes-dialog .form-error{color:var(--danger);margin:12px 0}.danger{background:var(--danger);color:var(--danger-ink)!important;margin-top:10px}.notes-app :global(.spin){animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   @container(max-width:680px){aside{padding:20px 14px}.desktop-toggle{display:none}.mobile-back{display:inline-flex}.formatting{padding:0 16px 10px}.editor,.preview{padding:22px}.split-button{display:none}.split .preview{display:none}.split .editor{width:100%}header{padding:0 16px;gap:8px}.breadcrumb{max-width:40cqw}.welcome p br{display:none}.welcome{padding:26px 18px}.document-actions{gap:0}.notes-dialog{padding:26px}.notes-dialog-layer{padding:14px}.notice{margin:10px 14px 0}}
-  .focus-toggle{margin-left:auto}.focus-mode .organization,.focus-mode .formatting,.focus-mode .breadcrumb,.focus-mode .view-modes,.focus-mode .desktop-toggle{display:none}.focus-mode .editor{max-width:820px;margin:auto;height:100%;padding-top:55px}.focus-mode header{border-bottom-color:transparent}.setup-link,.recovery-link{font-size:11px;color:var(--accent);margin-top:8px;text-decoration:none}.quick-capture{font-size:11px;margin:7px 0 -8px}
+  .focus-toggle{margin-left:auto}.focus-mode .organization,.focus-mode .formatting,.focus-mode .breadcrumb,.focus-mode .view-modes,.focus-mode .desktop-toggle{display:none}.focus-mode .editor{max-width:820px;margin:auto;height:100%;padding-top:55px}.focus-mode header{border-bottom-color:transparent}.setup-link{font-size:11px;color:var(--accent);margin-top:8px;text-decoration:none}.quick-capture{font-size:11px;margin:7px 0 -8px}
   [data-note-color="none"]{--note-color:var(--soft)}[data-note-color="sage"]{--note-color:var(--accent)}[data-note-color="sky"]{--note-color:var(--color-info,#79b8d7)}[data-note-color="lavender"]{--note-color:color-mix(in oklch,#b392e3 80%,var(--ink))}[data-note-color="rose"]{--note-color:var(--danger)}[data-note-color="amber"]{--note-color:var(--warning)}
   .note:not([data-note-color="none"]){border-left:3px solid var(--note-color);background:color-mix(in srgb,var(--note-color) 5%,transparent)}.note-tags{display:block;font-size:10px;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:165px;margin-top:5px}.note :global(.pin-mark){margin-left:auto;flex-shrink:0}.chosen{color:var(--accent)}.tag-filters .chosen{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}.tag-filters{display:flex;flex-wrap:wrap;gap:5px;max-height:90px;overflow:auto;padding:7px 0}.tag-filters button{font-size:10px;padding:4px 7px;border:1px solid var(--line);border-radius:5px;background:transparent}.tag-filters small{margin-left:6px;opacity:.65}.organization{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:0 40px 18px;flex-wrap:wrap}.tag-editor{min-width:0;flex:1}.tag-editor form{display:flex;align-items:center;gap:6px}.tag-editor input{border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);font-size:11px;width:100%;min-width:100px;padding:8px 0}.note-tag-chips{display:flex;gap:5px;flex-wrap:wrap}.note-tag-chips>span{display:flex;align-items:center;font-size:10px;border-radius:5px;background:color-mix(in srgb,var(--accent) 10%,transparent);padding-left:7px;color:var(--accent)}.note-tag-chips .icon{height:24px;width:23px}.note-colors{display:flex;gap:6px}.color-choice{width:22px;height:22px;display:grid;place-items:center;border:2px solid transparent;border-radius:50%;background:color-mix(in srgb,var(--note-color) 30%,var(--paper));color:var(--ink)}.color-choice.chosen{border-color:var(--note-color)}
   @container(max-width:680px){.organization{padding:0 22px 16px}.document-actions{flex-wrap:wrap;justify-content:flex-end;max-width:68px}.brand{margin-bottom:20px}.list-heading{margin-top:10px}}
@@ -926,5 +993,6 @@
   .capture-actions{gap:6px;margin:0 0 5px}.capture-actions button{height:36px;border-radius:8px}.filter-tools{position:relative;display:flex;align-items:center;justify-content:space-around;gap:2px;padding:2px 3px 5px;border-bottom:1px solid var(--line);flex-shrink:0}.filter-tools>.icon{width:34px;height:32px;color:var(--soft)}.filter-tools>.chosen,.filter-tools>.icon[aria-expanded="true"]{background:color-mix(in srgb,var(--accent) 11%,transparent);color:var(--accent)}.active-swatch{width:13px;height:13px;border-radius:50%;background:var(--note-color);box-shadow:0 0 0 3px color-mix(in srgb,var(--note-color) 18%,transparent)}
   .filter-popover{position:absolute;z-index:10;top:calc(100% + 4px);left:0;right:0;padding:10px;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px #0005;color:var(--ink)}.popover-label{display:block;font-size:9px;letter-spacing:1.1px;color:var(--soft);padding:1px 5px 7px;font-weight:600}.filter-option{width:100%;display:flex;align-items:center;gap:8px;text-align:left;padding:8px;border:0;border-radius:7px;background:none;font-size:11px}.filter-option>span:first-of-type{flex:1}.filter-option[aria-pressed="true"]{color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,transparent)}.filter-option:hover,.filter-swatches button:hover{background:var(--wash)}.filter-swatches{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:7px}.filter-swatches button{display:flex;flex-direction:column;align-items:center;gap:5px;border:0;border-radius:8px;background:none;padding:7px 2px;font-size:10px}.filter-swatch{height:25px;width:25px;display:grid;place-items:center;border-radius:50%;background:color-mix(in srgb,var(--note-color) 65%,var(--paper));color:var(--ink);border:1px solid color-mix(in srgb,var(--note-color) 80%,var(--line))}.filter-swatches .chosen .filter-swatch{outline:2px solid var(--note-color);outline-offset:2px}.filter-popover .tag-filters{max-height:150px}
   .search{padding:4px 5px 4px 9px;margin:0 0 8px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}.search .icon{width:25px;height:27px}.search input{min-width:0}.list-heading{margin:7px 2px 6px;font-size:9px;letter-spacing:1.1px}.list-heading>span{display:flex;align-items:center;gap:6px}.list-heading small{font-size:9px;letter-spacing:0;opacity:.8}.list-heading-actions{display:flex;gap:0}.list-heading-actions .icon{width:26px;height:28px;color:var(--soft)}.sidebar-footer{margin-top:10px;padding-top:8px}.footer-tools{display:flex;align-items:center;gap:2px}.footer-tools small{flex:1;font-size:9px;color:var(--soft);padding-left:3px}.footer-tools .icon{width:28px;height:30px;color:var(--soft)}
+  .list-heading-actions .recovery-copies{position:relative;color:var(--accent)}.recovery-copies small{position:absolute;right:-2px;top:-2px;min-width:12px;padding:1px 3px;border-radius:6px;background:var(--wash);color:var(--accent);font-size:8px;line-height:12px;letter-spacing:0}
   @media(pointer:coarse){.filter-tools>.icon{height:40px;width:40px}.library-picker .icon,.list-heading-actions .icon,.footer-tools .icon{height:38px;width:36px}.capture-actions button{height:42px}.filter-swatches button{min-height:58px}}
 </style>

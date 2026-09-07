@@ -163,3 +163,22 @@ test('pointer selections release focus while keyboard selections retain their pl
   await expect(scope).toBeFocused();
   expect(await scope.evaluate(node => node.matches(':focus-visible'))).toBe(true);
 });
+
+
+test('recovery copies use a compact history icon immediately left of Trash', async ({ page }) => {
+  await page.goto('/?trash');
+  await expect(sidebar(page).getByRole('button', { name: /Recovery copies/ })).toHaveCount(0);
+  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click();
+  await page.evaluate(() => { (window as any).notesDemo.saveFails = true; });
+  await page.getByRole('textbox', { name: 'Note Markdown' }).fill('Keep this recovery copy');
+  await page.reload();
+  const recovery = sidebar(page).getByRole('button', { name: 'Recovery copies (1)' });
+  await expect(recovery).toBeVisible();
+  await expect(recovery).toHaveAttribute('title', 'Recovery copies (1)');
+  expect(await recovery.evaluate(node => node.parentElement?.className)).toContain('list-heading-actions');
+  expect(await recovery.evaluate(node => node.nextElementSibling?.getAttribute('aria-label'))).toBe('Trash');
+  expect(await recovery.innerText()).toBe('1');
+  await recovery.click();
+  await page.locator('.recovery').getByRole('button', { name: 'Small things worth keeping', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Note Markdown' })).toHaveValue('Keep this recovery copy');
+});
