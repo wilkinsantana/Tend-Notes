@@ -72,6 +72,17 @@ Preview supports common Markdown, lists, code, and tables. Embedded HTML is
 displayed safely; external images load only after a click. Links open only after you
 click them. No external writing service, tracking, or AI account is required.
 
+## A compact writing sidebar
+
+The main icon row holds New note, Quick capture, Today, Templates, and Add
+notebook. The smaller row below groups color, pinned notes, sorting, and ToDo;
+tags appear when available. Color filters show swatches alongside their names.
+Hover over an icon for its label, or reach it with the keyboard.
+
+Open search beside the notebook selector. Escape closes search and clears its
+filter. Trash sits directly left of Refresh above the note list. Import and
+Export & backups remain together at the bottom.
+
 ## Start with Today
 
 Choose the calendar icon, **Today**, beside Quick capture to open a daily plan
@@ -123,7 +134,7 @@ instead of creating an incomplete copy. Attachment copying remains planned.
 
 ## Notes and ToDo together
 
-Choose **ToDo · Across notebooks** to gather Markdown checkboxes from every
+Choose **ToDo** in the smaller icon row to gather Markdown checkboxes from every
 connected notebook. Search task text, note names, or notebook names, and switch
 between Open, Completed, and All. **Open note** takes you to the exact checkbox
 in its original Markdown. Grocery lists and meeting action items use this same

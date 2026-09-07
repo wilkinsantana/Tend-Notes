@@ -16,6 +16,7 @@ test('create, save, recover, search inside text, safe preview and focus', async 
   await expect(page.locator('aside')).toBeHidden();
   await expect(editor).toBeVisible();
   await page.getByRole('button',{name:'Exit focus mode',exact:true}).click();
+  await page.getByRole('button',{name:'Search notes',exact:true}).click();
   await page.getByRole('textbox',{name:'Search your notes'}).fill('ultramarine');
   await expect(page.locator('.note')).toHaveCount(1);
   await page.reload();
@@ -43,7 +44,8 @@ test('a populated notebook continues the most recently modified loaded note in w
   ])));
   await page.setViewportSize({width:1100,height:800}); await page.goto('/');
   await expect(page.locator('.welcome').getByRole('button',{name:'Continue writing',exact:true})).toBeVisible();
-  await page.getByLabel('Sort notes').selectOption('title');
+  await page.getByRole('button',{name:'Sort notes',exact:true}).click();
+  await page.getByRole('button',{name:'Title A–Z',exact:true}).click();
   await page.locator('.welcome').getByRole('button',{name:'Continue writing',exact:true}).click();
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await expect(editor).toHaveValue('# Recent note'); await expect(editor).toBeFocused();
@@ -63,7 +65,8 @@ test('an empty active notebook keeps the first-note welcome', async ({page}) => 
 });
 
 test('an empty filtered list does not mistake a populated notebook for first-note onboarding', async ({page}) => {
-  await page.goto('/'); await page.getByRole('textbox',{name:'Search your notes'}).fill('not a saved note');
+  await page.goto('/'); await page.getByRole('button',{name:'Search notes',exact:true}).click();
+  await page.getByRole('textbox',{name:'Search your notes'}).fill('not a saved note');
   const welcome=page.locator('.welcome');
   await expect(welcome.getByText('No notes match these filters.')).toBeVisible();
   await expect(welcome.getByRole('button',{name:'Write your first note',exact:true})).toHaveCount(0);
@@ -167,10 +170,10 @@ test('notebook switching flushes newer typing and freezes transition edits', asy
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await editor.fill('First captured version'); await page.getByRole('button',{name:'Save now'}).click();
   await editor.fill('Newer typing before switching');
-  await page.getByLabel('NOTEBOOK',{exact:true}).selectOption('work');
+  await page.getByLabel('Notebook',{exact:true}).selectOption('work');
   await expect(editor).not.toBeEditable();
   await expect(page.getByText('Make room for an idea.')).toBeVisible();
-  await page.getByLabel('NOTEBOOK',{exact:true}).selectOption('personal');
+  await page.getByLabel('Notebook',{exact:true}).selectOption('personal');
   await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
   await expect(editor).toHaveValue('Newer typing before switching');
 });
@@ -259,12 +262,15 @@ test('tags, pins and theme-aware colors organize notes without exposing metadata
   await expect(editor).toHaveValue(original);
   await expect(page.getByRole('button',{name:'All changes saved'})).toBeVisible();
   await page.getByRole('button',{name:'Refresh notes',exact:true}).click();
-  await page.getByRole('button',{name:/Pinned 1/}).click();
+  await page.getByRole('button',{name:'Pinned notes (1)'}).click();
   await expect(page.locator('.note-list .note')).toHaveCount(1);
+  await page.getByRole('button',{name:'Filter by tag',exact:true}).click();
   await page.getByRole('button',{name:'#work/ideas1',exact:true}).click();
-  await page.getByRole('combobox',{name:'Filter note color'}).selectOption('sky');
+  await page.getByRole('button',{name:'Filter note color',exact:true}).click();
+  await page.getByRole('button',{name:'Sky',exact:true}).click();
   await expect(page.locator('.note-list .note')).toHaveCount(0);
-  await page.getByRole('combobox',{name:'Filter note color'}).selectOption('sage');
+  await page.getByRole('button',{name:'Filter note color',exact:true}).click();
+  await page.getByRole('button',{name:'Sage',exact:true}).click();
   await expect(page.locator('.note-list .note')).toHaveCount(1);
   await page.reload();await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
   await expect(page.getByRole('button',{name:'Unpin note',exact:true})).toHaveAttribute('aria-pressed','true');
