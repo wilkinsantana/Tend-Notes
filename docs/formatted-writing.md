@@ -1,9 +1,11 @@
 # Formatted Markdown writing
 
-The compact formatting toolbar offers an optional **Formatted writing** toggle.
+The compact formatting toolbar offers an **Rich text writing** toggle beside **Edit Markdown**, alongside Split and Preview.
+Click it again to return to source.
 Plain source remains the initial presentation. Headings, emphasis, quotes,
-links and code receive theme-aware styling while Markdown punctuation stays
-editable. The reader and Split view still render Markdown separately.
+links and code receive theme-aware styling. Formatting punctuation is hidden
+on inactive lines and revealed on the active line for precise editing. Checkboxes
+on inactive lines are clickable and share the normal undo and save flow. The reader and Split view still render Markdown separately.
 
 The editor loads its pinned CodeMirror module only when requested. Its dependencies
 and license notices are packaged with the verified extension; no CDN or external
@@ -32,3 +34,14 @@ for the Notes-only mobile/PWA release.
 
 References: [CodeMirror system guide](https://codemirror.net/docs/guide/) and the
 TypeScript declarations and source in the pinned package versions.
+
+## Equations
+
+The Sigma icon opens a formula dialog with a live preview, inline/display choice,
+and fraction, root, sum, integral and matrix examples. Markdown uses `$...$` for
+inline math and `$$` on separate lines for display math. Code remains literal.
+KaTeX is bundled locally and emits sanitized native MathML; no fonts, scripts or
+formula service are downloaded. Unsupported formulas remain visible as source.
+Individual formulas are bounded to 8,192 characters and preview rendering to
+256 formulas / 65,536 formula characters per document. Excess formulas stay as
+source. Export preserves the original LaTeX regardless of preview support.

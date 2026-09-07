@@ -7,6 +7,9 @@
   import EditorFind from './EditorFind.svelte';
   import FindHighlights from './FindHighlights.svelte';
   import WritingEditor from './WritingEditor.svelte';
+  import FormulaDialog from './FormulaDialog.svelte';
+  import NoteContextMenu from './NoteContextMenu.svelte';
+  import { Sigma } from 'lucide-svelte';
   import type { WritingSurface } from './writingSurface';
   import type { TextMatch } from './find';
   import TemplatePicker from './TemplatePicker.svelte';
@@ -225,6 +228,20 @@
   let deleteOpen = $state(false);
   let actionNote = $state<Note | null>(null);
   let colorNote = $state('');
+  let noteContext = $state<{note:Note;x:number;y:number;returnFocus:HTMLElement|null}|null>(null);
+  function showNoteContext(event:MouseEvent|KeyboardEvent,note:Note) {
+    if(event instanceof KeyboardEvent && event.key!=='ContextMenu' && !(event.key==='F10' && event.shiftKey)) return;
+    if(actionBusy || opening || formulaSelection) return;
+    event.preventDefault();event.stopPropagation();
+    const row=event.currentTarget as HTMLElement;
+    const trigger=row.querySelector<HTMLElement>('.note-open');
+    const box=(trigger ?? row).getBoundingClientRect();
+    noteContext={note,x:event instanceof MouseEvent ? event.clientX : box.left,y:event instanceof MouseEvent ? event.clientY : box.bottom,returnFocus:trigger};
+  }
+  async function exportListed(note:Note) {
+    try { const doc=view?.document.id===note.id ? {content:view.content} : await host.documents!.read(note.id); download(doc.content,note.name); }
+    catch(e){error=e instanceof Error ? e.message : 'Could not export the note.';}
+  }
   let renameOpen = $state<'note' | 'notebook' | null>(null);
   let renameName = $state('');
   let actionBusy = $state(false);
@@ -239,24 +256,43 @@
   let sourceEditor = $state<HTMLTextAreaElement>();
   let writingSurface = $state<WritingSurface>();
   let formattedWriting = $state(false);
+  let formulaSelection = $state<{start:number;end:number;body:string;id:string}|null>(null);
+  function openFormula() {
+    if (!view || !editor || editor.readOnly) return;
+    formulaSelection={start:editor.selectionStart,end:editor.selectionEnd,body:editor.value,id:view.document.id};
+  }
+  function insertFormula(value:string) {
+    const selected=formulaSelection; formulaSelection=null;
+    if (!selected || !view || view.document.id!==selected.id || editorBody!==selected.body || historyBlocked) { error='The note changed. Open Formula again to insert at the current position.'; return; }
+    const body=selected.body.slice(0,selected.start)+value+selected.body.slice(selected.end);
+    commitEditorBody(body,selected,{start:selected.start+value.length,end:selected.start+value.length});
+    void tick().then(()=>{editor?.focus();editor?.setSelectionRange(selected.start+value.length,selected.start+value.length);});
+  }
   const editor = $derived(formattedWriting ? writingSurface : sourceEditor);
   let writingLoading = $state(false);
   let Surface = $state<typeof import('./writingSurface').WritingSurface>();
   async function toggleWriting() {
     if (writingLoading) return;
+    const enable = !(formattedWriting && mode !== 'preview');
     const documentId = view?.document.id;
-    if (!formattedWriting && !Surface) {
+    if (enable && !Surface) {
       writingLoading = true;
       try { Surface = (await import('./writingSurface')).WritingSurface; }
       catch { error = 'Formatted writing could not start. Your Markdown is still here; try again.'; return; }
       finally { writingLoading = false; }
-      if (!alive || view?.document.id !== documentId || mode === 'preview') return;
+      if (!alive || view?.document.id !== documentId) return;
     }
     const selected = editor ? { start: editor.selectionStart, end: editor.selectionEnd } : null;
-    formattedWriting = !formattedWriting;
+    formattedWriting = enable;
+    if (mode === 'preview') mode = 'edit';
     await tick();
     editor?.focus();
     if (selected) editor?.setSelectionRange(selected.start, selected.end);
+  }
+  async function editSource() {
+    const selected=editor ? {start:editor.selectionStart,end:editor.selectionEnd} : null;
+    formattedWriting=false;mode='edit';await tick();editor?.focus();
+    if(selected) editor?.setSelectionRange(selected.start,selected.end);
   }
   let editorHistory: EditorHistory | null = null;
   let historyCanUndo = $state(false);
@@ -273,7 +309,7 @@
   const ready = $derived(host.documents?.version === 1 && !!host.user);
   const trashSupported = $derived(host.documents?.trash?.version === 1);
   const deletionUncertain = $derived(deletePending && deleteRequest?.documentId === view?.document.id);
-  const historyBlocked = $derived(opening || creating || deleting || actionBusy || !!deletionUncertain || !!mediaKind);
+  const historyBlocked = $derived(opening || creating || deleting || actionBusy || !!deletionUncertain || !!mediaKind || !!formulaSelection);
   const selectedLibrary = $derived(libraries.find(l => l.id === libraryId));
   const parsed = $derived(unpack(view?.content ?? ''));
   const editorBody = $derived(parsed.body.replace(/\r\n?/g, '\n'));
@@ -324,7 +360,7 @@
     finally { indexing = false; if (alive && libraryId && libraryId !== id) void buildSearch(libraryId); }
   }
   async function refresh() {
-    if (trashOpen || todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind) return;
+    if (trashOpen || todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind || formulaSelection) return;
     syncing = true;
     try {
       if (notes.length <= 100) await loadList();
@@ -332,7 +368,7 @@
       const revision = current?.view.document.revision;
       if (current && !current.view.dirty && !current.view.saving) {
         const latest = await host.documents!.read(current.view.document.id);
-        if (!mediaKind && !actionBusy && session === current && current.view.document.revision === revision) current.acceptRemote(latest);
+        if (!mediaKind && !formulaSelection && !actionBusy && session === current && current.view.document.revision === revision) current.acceptRemote(latest);
       }
     } catch { /* The last confirmed note stays visible; manual refresh reports errors. */ }
     finally { syncing = false; }
@@ -880,7 +916,7 @@
   }
   function shortcuts(event: KeyboardEvent) {
     if (event.isComposing || !(event.ctrlKey || event.metaKey)) return;
-    if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind) return;
+    if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind || formulaSelection) return;
     if (event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); void quickCapture(); }
     if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
     if (event.target !== sourceEditor && !writingSurface?.contains(event.target)) return;
@@ -936,7 +972,7 @@
   {:else if loading}
     <div class="welcome" role="status"><LoaderCircle class="spin"/><p>Opening your notebooks…</p></div>
   {:else}
-    <aside inert={templatesOpen || todoOpen}>
+    <aside inert={templatesOpen || todoOpen || !!formulaSelection}>
       <div class="brand"><span class="brand-icon"><BookOpen size={20}/></span><div><strong>TEND Notes</strong><small>A little space to think.</small></div></div>
       <div class="library-picker">
         <label class="sr-only" for="notes-library">Notebook</label>
@@ -970,7 +1006,7 @@
       <div class="list-heading"><span>{pinnedFilter ? 'PINNED NOTES' : 'YOUR NOTES'} <small>{pinnedFilter ? facets.pinned : facets.total}</small></span><div class="list-heading-actions">{#if !mobileEditor && hasLoadedNotes}<button class="icon continue-writing" aria-label="Continue writing" title="Continue writing" disabled={opening} onclick={() => void continueWriting()}><PenLine size={14}/></button>{/if}{#if recoveries.length}<button class="icon recovery-copies" aria-label={`Recovery copies (${recoveries.length})`} title={`Recovery copies (${recoveries.length})`} onclick={() => void showRecoveries()} disabled={opening || creating || deleting}><History size={14}/><small>{recoveries.length}</small></button>{/if}{#if trashSupported}<button class="icon" aria-label="Trash" title="Trash" onclick={() => void openTrash()} disabled={opening || actionBusy}><Trash2 size={14}/></button>{/if}<button class="icon" aria-label="Refresh notes" title="Refresh notes" onclick={() => { void loadList(); void buildSearch(libraryId); }} disabled={listLoading}><RefreshCw size={14} class={listLoading ? 'spin' : ''}/></button></div></div>
       <div class="note-list" aria-label="Notes">
         {#each notes as note (note.id)}
-          <div class="note" data-note-color={note.color ?? 'none'} class:selected={view?.document.id === note.id}>
+          <div class="note" role="group" oncontextmenu={event => showNoteContext(event,note)} onkeydown={event => showNoteContext(event,note)} data-note-color={note.color ?? 'none'} class:selected={view?.document.id === note.id}>
             <button class="note-open" aria-label={`${title(note.name)} ${date(note.modifiedAt)} Markdown`} onclick={() => void open(note)} disabled={opening || actionBusy} aria-pressed={view?.document.id === note.id}><FileText size={16}/><strong>{title(note.name)}</strong></button>
             <div class="note-meta"><small>{date(note.modifiedAt)}</small><div class="list-actions" aria-label={`Actions for ${title(note.name)}`}>
               <button class="icon" class:chosen={note.pinned} aria-label={`${note.pinned ? 'Unpin' : 'Pin'} ${title(note.name)}`} title={note.pinned ? 'Unpin' : 'Pin'} disabled={actionBusy} onclick={() => void organizeListed(note, {pinned: !note.pinned})}><Pin size={13}/></button>
@@ -988,13 +1024,13 @@
       </div>
       <div class="sidebar-footer">{#if indexing}<small role="status">Preparing full-text search…</small>{/if}{#if indexError}<small role="status">{indexError}</small>{/if}<div class="footer-tools"><small>Markdown. Yours to keep.</small><button class="icon" aria-label="Import Markdown" title="Import Markdown" onclick={() => filePicker?.click()} disabled={!selectedLibrary?.canCreate}><Upload size={15}/></button><button class="icon" aria-label="Export & backups" title="Export & backups" onclick={() => backupOpen = true}><Download size={15}/></button></div></div>
     </aside>
-    <main inert={templatesOpen}>
+    <main inert={templatesOpen || !!formulaSelection}>
       {#if trashOpen && host.documents?.trash}
         <TrashPanel api={host.documents.trash} onclose={() => void closeTrash()} onchange={() => void loadList()}/>
       {:else if todoOpen}
         <TodoPanel rows={todoState.rows} loading={todoState.loading} scanned={todoState.scanned} errors={todoState.errors} busy={todoState.busy} ontoggle={(key, checked) => void toggleTask(key, checked)} onopen={key => void openTask(key)} onrefresh={() => void taskWorkspace?.refresh()} onclose={() => void closeTodo()}/>
       {:else}
-      <header><button class="icon desktop-toggle" onclick={() => sidebar = !sidebar} aria-label={sidebar ? 'Hide notebooks' : 'Show notebooks'} title={sidebar ? 'Hide notebooks' : 'Show notebooks'}>{#if sidebar}<PanelLeftClose size={18}/>{:else}<PanelLeftOpen size={18}/>{/if}</button><button class="icon mobile-back" onclick={() => mobileEditor = false} aria-label="Back to notes"><ArrowLeft size={18}/></button><div class="breadcrumb">{#if view}<button class="note-title" aria-label="Rename current note" title="Rename note" onclick={() => beginRename(view!.document)}><h1>{title(view.document.name)}</h1></button>{:else}{selectedLibrary?.name ?? 'Your notes'}{/if}</div>{#if view}{#if quickCaptureTitle && host.documents?.rename}<button class="suggest-title" aria-label="Use first line as title" title={`Use “${quickCaptureTitle}” as title`} onclick={useFirstLineAsTitle}><TextCursorInput size={14}/><span>Use first line as title</span></button>{/if}<button class="icon focus-toggle" aria-label={focusMode ? "Exit focus mode" : "Focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} onclick={() => { focusMode = !focusMode; mode = "edit"; }}>{#if focusMode}<Minimize size={16}/>{:else}<Maximize size={16}/>{/if}</button><div class="outline-wrap" bind:this={outlineBoundary}><button class="icon" bind:this={outlineTrigger} aria-label="Note outline" title="Note outline · jump to source" aria-expanded={outlineOpen} aria-controls="note-outline" onclick={() => void toggleOutline()}><ListTree size={16}/></button>{#if outlineOpen}<div id="note-outline" class="outline-popover" role="dialog" aria-label="Note outline" tabindex="-1" use:dismissOutline onkeydown={outlineKeydown}>{#if outline.length}<span class="outline-label">JUMP TO SOURCE</span>{#each outline as heading, index (index)}<button class="outline-item" style={`--outline-level:${heading.level}`} onclick={() => void jumpToOutline(heading)}>{heading.label}</button>{/each}{:else}<p>No headings in this note yet.</p>{/if}</div>{/if}</div><div class="document-actions"><button class="icon" class:chosen={parsed.organization.pinned} aria-label={parsed.organization.pinned ? "Unpin note" : "Pin note"} aria-pressed={parsed.organization.pinned} title={parsed.organization.pinned ? "Unpin note" : "Pin note"} onclick={() => organize({pinned: !parsed.organization.pinned})}><Pin size={16}/></button><button class="icon" aria-label="Organize note" title="Tags and color" aria-expanded={organizeOpen} onclick={() => organizeOpen = !organizeOpen}><Tag size={16}/></button><button class="icon" aria-label="Export Markdown" title="Export Markdown" onclick={() => download(view!.content, view!.document.name)}><Download size={17}/></button><button class="icon" aria-label="Delete note" title="Delete note" onclick={() => beginDelete(view!.document)}><Trash2 size={16}/></button></div><div class="view-modes" aria-label="Editor view"><button class:active={mode === 'edit'} class="icon" aria-label="Edit Markdown" title="Edit Markdown" onclick={() => mode = 'edit'}><PenLine size={16}/></button><button class:active={mode === 'split'} class="icon split-button" aria-label="Split view" title="Split view" aria-pressed={mode === 'split'} onclick={() => mode = mode === 'split' ? 'edit' : 'split'}><Columns2 size={16}/></button><button class:active={mode === 'preview'} class="icon" aria-label="Preview" title="Preview" onclick={() => mode = 'preview'}><Eye size={17}/></button></div>{/if}</header>
+      <header><button class="icon desktop-toggle" onclick={() => sidebar = !sidebar} aria-label={sidebar ? 'Hide notebooks' : 'Show notebooks'} title={sidebar ? 'Hide notebooks' : 'Show notebooks'}>{#if sidebar}<PanelLeftClose size={18}/>{:else}<PanelLeftOpen size={18}/>{/if}</button><button class="icon mobile-back" onclick={() => mobileEditor = false} aria-label="Back to notes"><ArrowLeft size={18}/></button><div class="breadcrumb">{#if view}<button class="note-title" aria-label="Rename current note" title="Rename note" onclick={() => beginRename(view!.document)}><h1>{title(view.document.name)}</h1></button>{:else}{selectedLibrary?.name ?? 'Your notes'}{/if}</div>{#if view}{#if quickCaptureTitle && host.documents?.rename}<button class="suggest-title" aria-label="Use first line as title" title={`Use “${quickCaptureTitle}” as title`} onclick={useFirstLineAsTitle}><TextCursorInput size={14}/><span>Use first line as title</span></button>{/if}<button class="icon focus-toggle" aria-label={focusMode ? "Exit focus mode" : "Focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} onclick={() => { focusMode = !focusMode; mode = "edit"; }}>{#if focusMode}<Minimize size={16}/>{:else}<Maximize size={16}/>{/if}</button><div class="outline-wrap" bind:this={outlineBoundary}><button class="icon" bind:this={outlineTrigger} aria-label="Note outline" title="Note outline · jump to source" aria-expanded={outlineOpen} aria-controls="note-outline" onclick={() => void toggleOutline()}><ListTree size={16}/></button>{#if outlineOpen}<div id="note-outline" class="outline-popover" role="dialog" aria-label="Note outline" tabindex="-1" use:dismissOutline onkeydown={outlineKeydown}>{#if outline.length}<span class="outline-label">JUMP TO SOURCE</span>{#each outline as heading, index (index)}<button class="outline-item" style={`--outline-level:${heading.level}`} onclick={() => void jumpToOutline(heading)}>{heading.label}</button>{/each}{:else}<p>No headings in this note yet.</p>{/if}</div>{/if}</div><div class="document-actions"><button class="icon" class:chosen={parsed.organization.pinned} aria-label={parsed.organization.pinned ? "Unpin note" : "Pin note"} aria-pressed={parsed.organization.pinned} title={parsed.organization.pinned ? "Unpin note" : "Pin note"} onclick={() => organize({pinned: !parsed.organization.pinned})}><Pin size={16}/></button><button class="icon" aria-label="Organize note" title="Tags and color" aria-expanded={organizeOpen} onclick={() => organizeOpen = !organizeOpen}><Tag size={16}/></button><button class="icon" aria-label="Export Markdown" title="Export Markdown" onclick={() => download(view!.content, view!.document.name)}><Download size={17}/></button><button class="icon" aria-label="Delete note" title="Delete note" onclick={() => beginDelete(view!.document)}><Trash2 size={16}/></button></div><div class="view-modes" aria-label="Editor view"><button class:active={mode === 'edit' && !formattedWriting} class="icon" aria-label="Edit Markdown" title="Edit Markdown" onclick={() => void editSource()}><PenLine size={16}/></button><button class="icon" class:active={formattedWriting && mode !== 'preview'} aria-label="Rich text writing" aria-pressed={formattedWriting && mode !== 'preview'} title={formattedWriting ? "Use plain Markdown source" : "Rich text writing · reveal Markdown on the active line"} disabled={writingLoading} onclick={() => void toggleWriting()}>{#if writingLoading}<LoaderCircle size={16} class="spin"/>{:else}<Type size={16}/>{/if}</button><button class:active={mode === 'split'} class="icon split-button" aria-label="Split view" title="Split view" aria-pressed={mode === 'split'} onclick={() => mode = mode === 'split' ? 'edit' : 'split'}><Columns2 size={16}/></button><button class:active={mode === 'preview'} class="icon" aria-label="Preview" title="Preview" onclick={() => mode = 'preview'}><Eye size={17}/></button></div>{/if}</header>
       {#if error}<div class="notice error" role="alert">{error}<button class="icon" aria-label="Dismiss message" onclick={() => error = ''}><X size={15}/></button></div>{/if}
       {#if recoveries.length && !view}
         <div class="recovery"><strong>Pick up an unsaved draft</strong><p>Recovery copies from this browser are ready when you are.</p>{#each recoveries as draft}<div><button class="quiet" onclick={() => void recover(draft)} disabled={opening}>{title(draft.document.name)}</button><button class="icon" aria-label={`Export recovery copy of ${draft.document.name}`} onclick={() => download(draft.content, draft.document.name)}><Download size={15}/></button></div>{/each}</div>
@@ -1003,12 +1039,12 @@
         {#if organizeOpen}<section class="organization" aria-label="Note organization"><div class="tag-editor"><div class="note-tag-chips">{#each parsed.organization.tags as tag}<span>#{tag}<button class="icon" aria-label={`Remove tag ${tag}`} onclick={() => organize({tags:parsed.organization.tags.filter(t => t !== tag)})}><X size={11}/></button></span>{/each}</div><form onsubmit={e => { e.preventDefault(); addTag(); }}><input aria-label="Add tag" placeholder="Add a tag, e.g. work/ideas" bind:value={tagInput} maxlength="50"/><button class="quiet" type="submit" disabled={!tagInput.trim()}><Plus size={14}/> Add</button></form></div><div class="note-colors" aria-label="Note color">{#each COLORS as color}<button class="color-choice" data-note-color={color} class:chosen={parsed.organization.color === color} aria-label={color === 'none' ? 'No note color' : `${color} note color`} aria-pressed={parsed.organization.color === color} title={color === 'none' ? 'No color' : color} onclick={() => organize({color})}>{#if parsed.organization.color === color}<Check size={13}/>{/if}</button>{/each}</div></section>{/if}
         {#if view.error || view.recoveryError}<div class="notice error" role="alert"><div>{view.error || view.recoveryError}<div class="notice-actions">{#if view.conflict}<button class="quiet" onclick={() => reloadOpen = true}>Reload saved version</button><button class="quiet" onclick={() => beginCreate(view!.content, `${title(view!.document.name)} copy`)}>Save as new note</button>{:else}<button class="quiet" onclick={() => void save()}>Retry save</button>{/if}<button class="quiet" onclick={() => download(view!.content, view!.document.name)}>Export draft</button></div></div></div>{/if}
         {#if mode !== 'preview'}<div class="formatting" aria-label="Markdown formatting">
-          <button class="icon" class:chosen={formattedWriting} aria-label="Formatted writing" aria-pressed={formattedWriting} title={formattedWriting ? "Use plain Markdown source" : "Style Markdown while writing"} disabled={writingLoading} onclick={() => void toggleWriting()}>{#if writingLoading}<LoaderCircle size={16} class="spin"/>{:else}<Type size={16}/>{/if}</button>
+
           <button class="icon" title="Find in note (Ctrl/Cmd+F)" aria-label="Find in note" aria-expanded={findOpen} onclick={toggleFind}><Search size={16}/></button>
           <button class="icon" title="Undo (Ctrl+Z)" aria-label="Undo" onclick={() => applyHistory('undo')} disabled={!historyCanUndo || historyBlocked}><Undo2 size={16}/></button>
           <button class="icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" onclick={() => applyHistory('redo')} disabled={!historyCanRedo || historyBlocked}><Redo2 size={16}/></button>
           <span></span>
-          <select aria-label="Heading level" title="Heading level" value="" onchange={e => { if(e.currentTarget.value) format(e.currentTarget.value, '', true); e.currentTarget.value = ''; }}><option value="">Heading</option><option value="# ">Heading 1</option><option value="## ">Heading 2</option><option value="### ">Heading 3</option></select>
+          <select aria-label="Heading level" title="Heading level" value="" onchange={e => { if(e.currentTarget.value) format(e.currentTarget.value, '', true); e.currentTarget.value = ''; }}><option value="">Heading</option><option value="# ">Heading 1</option><option value="## ">Heading 2</option><option value="### ">Heading 3</option><option value="#### ">Heading 4</option><option value="##### ">Heading 5</option><option value="###### ">Heading 6</option></select>
           <button class="icon" title="Bold (Ctrl+B)" aria-label="Bold" onclick={() => format('**', '**')}><Bold size={16}/></button>
           <button class="icon" title="Italic (Ctrl+I)" aria-label="Italic" onclick={() => format('*', '*')}><Italic size={16}/></button>
           <button class="icon" title="Strikethrough" aria-label="Strikethrough" onclick={() => format('~~', '~~')}><Strikethrough size={16}/></button>
@@ -1021,6 +1057,7 @@
           <button class="icon" title="Inline code" aria-label="Inline code" onclick={() => format('`', '`')}><Code size={17}/></button>
           <button class="icon" title="Code block" aria-label="Code block" onclick={() => format('\n```text\n', '\n```\n')}><SquareCode size={17}/></button>
           <button class="icon" title="Table" aria-label="Insert table" onclick={() => format('\n| Column | Column |\n| --- | --- |\n| ', ' |  |\n')}><Table2 size={16}/></button>
+          <button class="icon" title="Insert formula" aria-label="Insert formula" onclick={openFormula}><Sigma size={17}/></button>
           <button class="icon" title="Divider" aria-label="Insert divider" onclick={() => format('\n\n---\n\n')}><Minus size={16}/></button>
           <span></span>
           <button class="icon" title="Image · upload or link" aria-label="Insert image" onclick={() => openMedia('image')}><ImagePlus size={18}/></button>
@@ -1039,6 +1076,7 @@
       {/if}
       {/if}
     </main>
+    {#if formulaSelection}<FormulaDialog initial={formulaSelection.body.slice(formulaSelection.start,formulaSelection.end)} oninsert={insertFormula} onclose={() => {formulaSelection=null;void tick().then(()=>editor?.focus());}}/>{/if}
     <input class="hidden" bind:this={filePicker} type="file" accept=".md,.markdown,text/markdown" onchange={importFile}/>
   {/if}
   {#if templatesOpen && templateOpenDocuments}<TemplatePicker
@@ -1068,10 +1106,12 @@
       {#if actionError}<p class="form-error" role="alert">{actionError}</p>{/if}
     </div></div>
   {/if}
+  {#if noteContext}{@const note=noteContext.note}{#key noteContext}<NoteContextMenu name={title(note.name)} pinned={!!note.pinned} x={noteContext.x} y={noteContext.y} returnFocus={noteContext.returnFocus} disabled={actionBusy} onclose={() => noteContext=null} onrename={() => beginRename(note)} onpin={() => void organizeListed(note,{pinned:!note.pinned})} oncolor={() => colorNote=note.id} onexport={() => void exportListed(note)} ondelete={() => beginDelete(note)}/>{/key}{/if}
   {#if mediaKind && mediaTarget}<MediaDialog kind={mediaKind} documents={host.documents!} noteId={mediaTarget.id} insert={insertMedia} close={() => mediaKind = null}/>{/if}
 </div>
 
 <style>
+  .editor::selection{background:#2563eb;color:#fff}
   .notes-app{--paper:var(--color-base-100,#151b19);--ink:var(--color-base-content,#d8e3df);--wash:var(--color-base-200,#1d2622);--line:color-mix(in srgb,var(--ink) 10%,transparent);--soft:color-mix(in srgb,var(--ink) 54%,transparent);--accent:var(--color-primary,#66b798);--accent-ink:var(--color-primary-content,#071a13);--warning:var(--color-warning,#d7ac64);--danger:var(--color-error,#dc7777);--danger-ink:var(--color-error-content,#250c0c);height:100%;min-height:360px;display:grid;grid-template-columns:236px minmax(0,1fr);color:var(--ink);background:color-mix(in srgb,var(--paper) var(--tend-panel-surface-alpha,100%),transparent);font:14px/1.5 var(--font-sans,system-ui,sans-serif);position:relative;container-type:inline-size;overflow:hidden;text-align:left}
   .notes-app :global(*){box-sizing:border-box}.notes-app :global(button),.notes-app :global(input),.notes-app :global(select),.notes-app :global(textarea){font:inherit}.notes-app :global(button){cursor:pointer}.notes-app :global(button:disabled){opacity:.45;cursor:default}.notes-app :global(button:focus-visible),.notes-app :global(input:focus-visible),.notes-app :global(select:focus-visible),.notes-app :global(a:focus-visible){outline:2px solid var(--accent);outline-offset:3px}.notes-app :global(button){color:inherit}.notes-app :global(h1),.notes-app :global(h2),.notes-app :global(p){margin:0}
   aside{background:color-mix(in srgb,color-mix(in srgb,var(--wash) 70%,var(--paper)) var(--tend-panel-surface-alpha,100%),transparent);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;padding:28px 16px 18px;overflow:auto}.brand{display:flex;align-items:center;gap:11px;margin:0 8px 28px}.brand-icon{display:grid;place-items:center;width:38px;height:42px;border-radius:12px;background:var(--accent);color:var(--accent-ink)}.brand strong{display:block;font-size:16px;letter-spacing:-.4px}.brand small{display:block;color:var(--soft);font-size:10px;margin-top:2px}.library-picker{padding:0 8px;margin-bottom:16px}.library-picker label,.list-heading{font-size:10px;font-weight:600;letter-spacing:1.3px;color:var(--soft)}select option{background:var(--wash);color:var(--ink)}select{width:100%;border:0;background:transparent;color:var(--ink);margin-top:5px;padding:2px 0}.primary,.danger{display:inline-flex;justify-content:center;align-items:center;gap:9px;border:0;border-radius:9px;background:var(--accent);color:var(--accent-ink)!important;padding:10px 16px;font-weight:550;text-decoration:none;font-size:13px;box-shadow:0 2px 3px #00000008}.new-note{width:100%;justify-content:flex-start}.search{display:flex;align-items:center;gap:9px;color:var(--soft);padding:10px 8px;margin-top:14px}.search input{background:none;border:0;outline:0!important;width:100%;font-size:12px;color:var(--ink)}.search input::placeholder{color:var(--soft)}.list-heading{display:flex;align-items:center;justify-content:space-between;margin:17px 8px 8px}.note-list{overflow:auto;flex:1;min-height:84px}.note{display:flex;align-items:center;gap:10px;padding:12px;width:100%;border:1px solid transparent;background:none;border-radius:9px;text-align:left;margin-bottom:4px}.note>span{min-width:0}.note strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:550}.note small{display:block;font-size:10px;color:var(--soft);margin-top:3px}.note> :global(svg){flex-shrink:0;color:var(--soft)}.note.selected{background:var(--paper);border-color:var(--line);box-shadow:0 2px 6px #00000004}.note.selected> :global(svg){color:var(--accent)}.note:hover{background:color-mix(in srgb,var(--paper) 70%,transparent)}.sidebar-footer{padding-top:18px;border-top:1px solid var(--line);margin-top:20px}.sidebar-footer>small{font-size:10px;color:var(--soft);display:block;padding-left:8px;margin-top:8px}.quiet{display:inline-flex;gap:8px;align-items:center;border:0;background:transparent;padding:7px 8px;border-radius:6px;font-size:12px}.quiet:hover,.icon:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}.list-empty{padding:25px 12px;color:var(--soft);font-size:11px;text-align:center}.list-empty :global(svg){margin:auto auto 10px}.more{width:100%;justify-content:center}.hidden{display:none}

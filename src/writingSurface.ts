@@ -1,8 +1,9 @@
+import { richWriting } from './richWriting';
 /** Formatted Markdown presentation with the existing Notes history as its sole Undo owner. */
 import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, drawSelection, keymap } from '@codemirror/view';
 import { defaultKeymap, insertNewline } from '@codemirror/commands';
-import { markdown } from '@codemirror/lang-markdown';
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { markdownNewline } from './keyboard';
@@ -57,7 +58,7 @@ const theme = EditorView.theme({
   '.cm-scroller': { fontFamily: 'var(--font-sans,system-ui,sans-serif)', lineHeight: '1.9', overflow: 'auto' },
   '.cm-content': { padding: '24px', caretColor: 'var(--accent,#66b798)' },
   '.cm-line': { padding: '0' },
-  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { background: 'color-mix(in srgb,var(--accent,#66b798) 25%,transparent)' },
+  '& > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': { backgroundColor: 'rgba(59, 130, 246, 0.35)' },
   '.notes-find-match': { background: 'color-mix(in srgb,var(--accent,#66b798) 22%,transparent)', borderRadius: '2px' },
   '.notes-find-active': { background: 'color-mix(in srgb,var(--accent,#66b798) 45%,transparent)', outline: '1px solid var(--accent,#66b798)' },
   '.cm-cursor': { borderLeftColor: 'var(--accent,#66b798)' },
@@ -77,10 +78,10 @@ export class WritingSurface {
     const undo = (redo = false) => { if (!this.view.state.readOnly) (redo ? options.onRedo : options.onUndo)(); return true; };
     this.view = new EditorView({ parent, state: EditorState.create({ doc: options.body, extensions: [
       this.access.of(this.accessConfig(!!options.readOnly)),
-      searchField,
+      searchField, richWriting,
       EditorState.allowMultipleSelections.of(false),
       EditorView.contentAttributes.of({ 'aria-label': 'Formatted Markdown', spellcheck: 'true' }),
-      EditorView.lineWrapping, drawSelection(), markdown({addKeymap:false,completeHTMLTags:false,pasteURLAsLink:false}), syntaxHighlighting(highlight), theme,
+      EditorView.lineWrapping, drawSelection(), markdown({base:markdownLanguage,addKeymap:false,completeHTMLTags:false,pasteURLAsLink:false}), syntaxHighlighting(highlight), theme,
       EditorState.transactionFilter.of(tr => tr.docChanged && tr.startState.readOnly && !tr.annotation(external) ? [] : tr),
       EditorView.domEventHandlers({
         keydown: event => {

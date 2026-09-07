@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-const toggle = (page: Page) => page.getByRole('button', { name: 'Formatted writing', exact: true });
+const toggle = (page: Page) => page.getByRole('button', { name: 'Rich text writing', exact: true });
 const formatted = (page: Page) => page.getByRole('textbox', { name: 'Formatted Markdown' });
 const source = (page: Page) => page.getByRole('textbox', { name: 'Note Markdown' });
 const undo = (page: Page) => page.getByRole('button', { name: 'Undo', exact: true });
@@ -30,7 +30,7 @@ test('formatted writing shares toolbar, source, preview and typing history', asy
   await page.getByRole('button', {name:'Split view',exact:true}).click();
   await expect(page.locator('.preview strong')).toHaveText('Hello world');
   await page.getByRole('button', {name:'Preview',exact:true}).click();
-  await page.getByRole('button', {name:'Edit Markdown',exact:true}).click();
+  await toggle(page).click();
   await formatted(page).press('Control+z');
   expect(await plain(page)).toBe('Hello world');
 });
@@ -86,7 +86,6 @@ test('opening and changing presentation preserve original CRLF bytes without sav
   await expect(formatted(page)).toBeVisible();
   await page.getByRole('button',{name:'Preview',exact:true}).click();
   await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
-  await toggle(page).click();
   await source(page).press('Control+s');
   await expect(page.getByRole('button',{name:'All changes saved'})).toBeVisible();
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tend-notes:demo-documents')!)[0].content)).toBe(original);

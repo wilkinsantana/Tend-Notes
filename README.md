@@ -8,7 +8,7 @@ alongside Sites. It runs inside Tend in the browser and desktop app.
 
 - Full-text searchable notes backed by your Documents libraries.
 - Portable tags, pinned notes, gentle color labels, and quick sidebar filters.
-- Markdown source and optional formatted writing, formatting shortcuts, a note outline, in-note search, focus mode, and a safe reading preview.
+- Markdown source and a rich writing toggle beside Edit Markdown, formatting shortcuts, a note outline, in-note search, focus mode, and a safe reading preview.
 - Live Tend theme colors and panel transparency, with readable menus and dialogs.
 - Quick capture, automatic saving, visible status, and conflict protection.
 - Reusable grocery, packing, meeting, daily-plan, project, and checklist templates.
@@ -83,7 +83,8 @@ Shift+Enter moves back. Match case is optional. Escape returns to the editor.
 Search is literal, works in Edit and Split, and does not alter writing or Undo
 history. Up to 10,000 matches are shown; narrow the search if the count ends in +.
 
-Preview supports common Markdown, lists, code, and tables. Embedded HTML is
+Preview supports common Markdown, lists, code, tables, and LaTeX math. Use the
+Sigma toolbar icon to insert a formula with a live preview. Embedded HTML is
 displayed safely; external images load only after a click. Links open only after you
 click them. No external writing service, tracking, or AI account is required.
 
@@ -92,7 +93,9 @@ click them. No external writing service, tracking, or AI account is required.
 The main icon row holds New note, Quick capture, Today, Templates, and Add
 notebook. The smaller row below groups color, pinned notes, sorting, and ToDo;
 tags appear when available. Color filters show swatches alongside their names.
-Hover over an icon for its label, or reach it with the keyboard.
+Hover over an icon for its label, or reach it with the keyboard. Right-click a
+note (or press Shift+F10) for Rename, Pin, Color, Export, and Delete. These
+actions work on the chosen note without opening it.
 
 Open search beside the notebook selector. Escape closes search and clears its
 filter. Available browser recovery copies appear as a history icon with a count
