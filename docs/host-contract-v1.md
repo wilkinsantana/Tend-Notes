@@ -253,3 +253,11 @@ folder; restoring there preserves relative references. Source/archive disabling
 preserves Trash; restore requires reactivation. Removing or repointing storage
 with retained or pending recovery is blocked until recovery is resolved. Server
 disk loss is outside this retention guarantee; no secure-erasure claim is made.
+
+## Optional local header action
+
+An active Notes mount advertises `data-notes-header-action="1"` on its own
+container. A same-page host header may dispatch `tend-notes:new-note` directly
+on that container to open the normal creation dialog. The listener is removed
+on unmount. This is a UI action only; document creation still uses the existing
+authorized Documents capability. Older packages simply lack this affordance.

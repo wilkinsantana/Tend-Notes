@@ -168,7 +168,7 @@ test('pointer selections release focus while keyboard selections retain their pl
 test('recovery copies use a compact history icon immediately left of Trash', async ({ page }) => {
   await page.goto('/?trash');
   await expect(sidebar(page).getByRole('button', { name: /Recovery copies/ })).toHaveCount(0);
-  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click();
+  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.evaluate(() => { (window as any).notesDemo.saveFails = true; });
   await page.getByRole('textbox', { name: 'Note Markdown' }).fill('Keep this recovery copy');
   await page.reload();

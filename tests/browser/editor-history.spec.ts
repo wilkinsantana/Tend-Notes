@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 async function open(page: Page) {
   await page.goto('/');
-  await page.getByRole('button', {name: /Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button', {name: /Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   return page.getByRole('textbox', {name:'Note Markdown'});
 }
 const undo = (page:Page) => page.getByRole('button',{name:'Undo',exact:true});

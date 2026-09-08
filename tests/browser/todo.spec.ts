@@ -63,7 +63,7 @@ test('failed task save stays unchecked; retry confirms before showing completion
 });
 
 test('unsaved failed editor blocks ToDo and keeps its recovery copy',async({page})=>{
-  await seed(page); await page.getByRole('button',{name:/Shopping.*Markdown/}).click();
+  await seed(page); await page.getByRole('button',{name:/Shopping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.evaluate(()=>{(window as any).notesDemo.saveFails=true;});
   const editor=page.getByRole('textbox',{name:'Note Markdown'});await editor.fill('My unfinished writing');
   await page.getByRole('button',{name:/^ToDo/}).click();
@@ -105,7 +105,7 @@ test('late reads from a closed ToDo scan cannot change the next editor',async({p
   await expect(page.getByRole('button',{name:'Refresh tasks'})).toBeDisabled();
   await page.getByRole('button',{name:'Back to Notes'}).click();
   await page.evaluate(()=>{(window as any).notesDemo.readDelay=0;});
-  await page.getByRole('button',{name:/Shopping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Shopping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor=page.getByRole('textbox',{name:'Note Markdown'});await editor.fill('A note after cancelling task scan');
   await expect(page.getByRole('button',{name:'All changes saved',exact:true})).toBeVisible();
   await expect(editor).toHaveValue('A note after cancelling task scan');

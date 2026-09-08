@@ -9,6 +9,9 @@ alongside Sites. It runs inside Tend in the browser and desktop app.
 - Full-text searchable notes backed by your Documents libraries.
 - Portable tags, pinned notes, gentle color labels, and quick sidebar filters.
 - Markdown source and a rich writing toggle beside Edit Markdown, formatting shortcuts, a note outline, in-note search, focus mode, and a safe reading preview.
+- Saved notes open in reading view; wide tables scroll independently.
+- Formatting tools fit one row, with extra tools in a three-dot menu.
+- Compatible standalone hosts offer New Note from the fixed header.
 - Live Tend theme colors and panel transparency, with readable menus and dialogs.
 - Quick capture, automatic saving, visible status, and conflict protection.
 - Reusable grocery, packing, meeting, daily-plan, project, and checklist templates.

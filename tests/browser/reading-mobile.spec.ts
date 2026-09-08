@@ -1,0 +1,21 @@
+import {test,expect} from '@playwright/test';
+test('preview first, table-only scrolling, responsive tools and scoped header action',async({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ await page.addInitScript(()=>localStorage.setItem('tend-notes:demo-documents',JSON.stringify([{id:'wide',libraryId:'personal',name:'Wide table.md',content:'# Read first\n\nA paragraph stays within the viewport.\n\n| One | Two | Three | Four | Five |\n| --- | --- | --- | --- | --- |\n| First value | Second value | Third value | Fourth value | Fifth value |',revision:'r',modifiedAt:1,size:100}])));
+ await page.goto('/');
+ await page.getByRole('button',{name:/Wide table.*Markdown/}).click();
+ await expect(page.getByRole('textbox',{name:'Note Markdown'})).toHaveCount(0);
+ const table=page.getByRole('region',{name:'Scrollable table'});
+ await expect(table).toBeVisible();
+ expect(await table.evaluate(el=>el.scrollWidth>el.clientWidth)).toBe(true);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
+ await page.getByRole('button',{name:'More formatting options',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Insert table',exact:true})).toBeVisible();
+ await page.keyboard.press('Escape');
+ await expect(page.getByRole('button',{name:'More formatting options',exact:true})).toBeFocused();
+ const row=page.getByRole('group',{name:'Markdown formatting',exact:true});
+ expect(await row.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await page.evaluate(()=>document.querySelector('[data-notes-header-action="1"]')!.dispatchEvent(new Event('tend-notes:new-note')));
+ await expect(page.getByRole('dialog',{name:'New note',exact:true})).toBeVisible();
+});

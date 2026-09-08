@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('right-click renames the targeted unselected note without changing the open draft', async ({ page }) => {
-  await page.getByRole('button', { name: /Current draft.*Markdown/ }).click();
+  await page.getByRole('button', { name: /Current draft.*Markdown/ }).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor = page.getByRole('textbox', { name: 'Note Markdown' });
   await editor.fill('# Keep my current writing');
   const row = page.locator('.note').filter({ has: page.locator('.note-open', { hasText: 'Other note' }) });

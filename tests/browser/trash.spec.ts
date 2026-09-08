@@ -26,7 +26,7 @@ test('Trash restores Markdown, resolves a name collision, and survives reload', 
   await page.getByRole('button', {name: 'Restore', exact: true}).click();
   await expect(page.getByText('Trash is empty', {exact:true})).toBeVisible();
   await page.getByRole('button', {name:'Back to Notes', exact:true}).click();
-  await page.getByRole('button', {name:/Recovered idea.*Markdown/}).click();
+  await page.getByRole('button', {name:/Recovered idea.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(page.getByRole('textbox', {name:'Note Markdown'})).toHaveValue(/Small things worth keeping/);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tend-notes:demo-documents')!).find((doc:any) => doc.id === 'replacement').content)).toBe('Replacement stays');
 });
@@ -53,7 +53,7 @@ test('lost move response checks the same operation and permanent deletion needs 
 });
 test('a failed current save blocks moving to Trash and retains the draft', async ({page}) => {
   await page.goto('/?trash');
-  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.evaluate(() => { (window as any).notesDemo.saveFails = true; });
   const editor = page.getByRole('textbox', {name:'Note Markdown'});
   await editor.fill('Keep this unsaved draft.');
@@ -84,7 +84,7 @@ test('uncertain restore retries the exact input even when the first request neve
 });
 test('closing an uncertain move protects organization and status can still reconcile', async ({page}) => {
   await page.goto('/?trash');
-  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.evaluate(() => { (window as any).notesDemo.trashLoseResponse = true; });
   await page.getByRole('button', {name:'Delete note', exact:true}).click();
   const dialog = page.getByRole('dialog', {name:'Delete note', exact:true});

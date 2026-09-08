@@ -3,6 +3,7 @@
   import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type } from 'lucide-svelte';
   import type { Host, Library, Note, Document, Documents } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
+  import ResponsiveToolbar from './ResponsiveToolbar.svelte';
   import Preview from './Preview.svelte';
   import EditorFind from './EditorFind.svelte';
   import FindHighlights from './FindHighlights.svelte';
@@ -180,7 +181,7 @@
   let opening = $state(false);
   let error = $state('');
   let view = $state<View | null>(null);
-  let mode = $state<'edit' | 'split' | 'preview'>('edit');
+  let mode = $state<'edit' | 'split' | 'preview'>('preview');
   let sidebar = $state(true);
   let focusMode = $state(false);
   let indexing = $state(false);
@@ -581,7 +582,7 @@
       const document = await host.documents.read(note.id);
       if (!alive) return;
       if (!(await ensureSaved())) return;
-      session?.abandon(); connect(document);
+      session?.abandon(); connect(document); mode='preview';
       refreshDrafts();
     } catch (e) { error = message(e); }
     finally { opening = false; }
@@ -600,7 +601,7 @@
     try {
       const document = await host.documents!.read(draft.document.id);
       if (!(await ensureSaved())) return;
-      session?.abandon(); connect(document); session!.restore(draft);
+      session?.abandon(); connect(document); mode='edit'; session!.restore(draft);
       // Keep the original recovery record until the user confirms a server save.
       if (!view?.dirty) { drafts.forget(draft.key); refreshDrafts(); }
     } catch (e) { error = message(e) + ' You can still export this recovery copy.'; }
@@ -614,6 +615,7 @@
       refreshDrafts(); await loadList();
     }
   }
+  export function newNote(){if(ready && !loading && !createOpen && selectedLibrary?.canCreate)beginCreate();}
   function beginCreate(content = '', name = '') {
     createTemplate = ''; createContent = content; createName = name; createError = ''; createOpen = true;
   }
@@ -710,7 +712,7 @@
         createError = 'The new note was saved. Resolve the open draft before switching notes.'; await loadList(); return;
       }
       if (!(await ensureSaved())) return;
-      session?.abandon(); connect(document); if (createTemplate) mode = 'edit'; createOpen = false; await loadList();
+      session?.abandon(); connect(document); mode = 'edit'; todoOpen=false;trashOpen=false;createOpen = false; await loadList();
       await tick(); editor?.focus();
     } catch (e) { createError = message(e); }
     finally { creating = false; }
@@ -1038,32 +1040,27 @@
       {#if view}
         {#if organizeOpen}<section class="organization" aria-label="Note organization"><div class="tag-editor"><div class="note-tag-chips">{#each parsed.organization.tags as tag}<span>#{tag}<button class="icon" aria-label={`Remove tag ${tag}`} onclick={() => organize({tags:parsed.organization.tags.filter(t => t !== tag)})}><X size={11}/></button></span>{/each}</div><form onsubmit={e => { e.preventDefault(); addTag(); }}><input aria-label="Add tag" placeholder="Add a tag, e.g. work/ideas" bind:value={tagInput} maxlength="50"/><button class="quiet" type="submit" disabled={!tagInput.trim()}><Plus size={14}/> Add</button></form></div><div class="note-colors" aria-label="Note color">{#each COLORS as color}<button class="color-choice" data-note-color={color} class:chosen={parsed.organization.color === color} aria-label={color === 'none' ? 'No note color' : `${color} note color`} aria-pressed={parsed.organization.color === color} title={color === 'none' ? 'No color' : color} onclick={() => organize({color})}>{#if parsed.organization.color === color}<Check size={13}/>{/if}</button>{/each}</div></section>{/if}
         {#if view.error || view.recoveryError}<div class="notice error" role="alert"><div>{view.error || view.recoveryError}<div class="notice-actions">{#if view.conflict}<button class="quiet" onclick={() => reloadOpen = true}>Reload saved version</button><button class="quiet" onclick={() => beginCreate(view!.content, `${title(view!.document.name)} copy`)}>Save as new note</button>{:else}<button class="quiet" onclick={() => void save()}>Retry save</button>{/if}<button class="quiet" onclick={() => download(view!.content, view!.document.name)}>Export draft</button></div></div></div>{/if}
-        {#if mode !== 'preview'}<div class="formatting" aria-label="Markdown formatting">
-
-          <button class="icon" title="Find in note (Ctrl/Cmd+F)" aria-label="Find in note" aria-expanded={findOpen} onclick={toggleFind}><Search size={16}/></button>
-          <button class="icon" title="Undo (Ctrl+Z)" aria-label="Undo" onclick={() => applyHistory('undo')} disabled={!historyCanUndo || historyBlocked}><Undo2 size={16}/></button>
-          <button class="icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" onclick={() => applyHistory('redo')} disabled={!historyCanRedo || historyBlocked}><Redo2 size={16}/></button>
-          <span></span>
-          <select aria-label="Heading level" title="Heading level" value="" onchange={e => { if(e.currentTarget.value) format(e.currentTarget.value, '', true); e.currentTarget.value = ''; }}><option value="">Heading</option><option value="# ">Heading 1</option><option value="## ">Heading 2</option><option value="### ">Heading 3</option><option value="#### ">Heading 4</option><option value="##### ">Heading 5</option><option value="###### ">Heading 6</option></select>
-          <button class="icon" title="Bold (Ctrl+B)" aria-label="Bold" onclick={() => format('**', '**')}><Bold size={16}/></button>
-          <button class="icon" title="Italic (Ctrl+I)" aria-label="Italic" onclick={() => format('*', '*')}><Italic size={16}/></button>
-          <button class="icon" title="Strikethrough" aria-label="Strikethrough" onclick={() => format('~~', '~~')}><Strikethrough size={16}/></button>
-          <span></span>
-          <button class="icon" title="Bullet list" aria-label="Bullet list" onclick={() => format('- ', '', true)}><List size={17}/></button>
-          <button class="icon" title="Numbered list" aria-label="Numbered list" onclick={() => format('1. ', '', true)}><ListOrdered size={17}/></button>
-          <button class="icon" title="Checklist" aria-label="Checklist" onclick={() => format('- [ ] ', '', true)}><ListTodo size={17}/></button>
-          <button class="icon" title="Block quote" aria-label="Block quote" onclick={() => format('> ', '', true)}><Quote size={16}/></button>
-          <button class="icon" title="Insert link" aria-label="Insert link" onclick={() => format('[', '](https://)')}><Link size={16}/></button>
-          <button class="icon" title="Inline code" aria-label="Inline code" onclick={() => format('`', '`')}><Code size={17}/></button>
-          <button class="icon" title="Code block" aria-label="Code block" onclick={() => format('\n```text\n', '\n```\n')}><SquareCode size={17}/></button>
-          <button class="icon" title="Table" aria-label="Insert table" onclick={() => format('\n| Column | Column |\n| --- | --- |\n| ', ' |  |\n')}><Table2 size={16}/></button>
-          <button class="icon" title="Insert formula" aria-label="Insert formula" onclick={openFormula}><Sigma size={17}/></button>
-          <button class="icon" title="Divider" aria-label="Insert divider" onclick={() => format('\n\n---\n\n')}><Minus size={16}/></button>
-          <span></span>
-          <button class="icon" title="Image · upload or link" aria-label="Insert image" onclick={() => openMedia('image')}><ImagePlus size={18}/></button>
-          <button class="icon" title="YouTube video" aria-label="Insert YouTube video" onclick={() => openMedia('youtube')}><Youtube size={18}/></button>
-          <button class="icon" title="Audio · upload or record" aria-label="Insert audio" onclick={() => openMedia('audio')}><Mic size={17}/></button>
-        </div>{/if}
+{#snippet tool0()}<button class="icon" title="Find in note (Ctrl/Cmd+F)" aria-label="Find in note" aria-expanded={findOpen} onclick={toggleFind}><Search size={16}/></button>{/snippet}
+{#snippet tool1()}<button class="icon" title="Undo (Ctrl+Z)" aria-label="Undo" onclick={() => applyHistory('undo')} disabled={!historyCanUndo || historyBlocked}><Undo2 size={16}/></button>{/snippet}
+{#snippet tool2()}<button class="icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" onclick={() => applyHistory('redo')} disabled={!historyCanRedo || historyBlocked}><Redo2 size={16}/></button>{/snippet}
+{#snippet tool3()}<select aria-label="Heading level" title="Heading level" value="" onchange={e => { if(e.currentTarget.value) format(e.currentTarget.value, '', true); e.currentTarget.value = ''; }}><option value="">Heading</option><option value="# ">Heading 1</option><option value="## ">Heading 2</option><option value="### ">Heading 3</option><option value="#### ">Heading 4</option><option value="##### ">Heading 5</option><option value="###### ">Heading 6</option></select>{/snippet}
+{#snippet tool4()}<button class="icon" title="Bold (Ctrl+B)" aria-label="Bold" onclick={() => format('**', '**')}><Bold size={16}/></button>{/snippet}
+{#snippet tool5()}<button class="icon" title="Italic (Ctrl+I)" aria-label="Italic" onclick={() => format('*', '*')}><Italic size={16}/></button>{/snippet}
+{#snippet tool6()}<button class="icon" title="Strikethrough" aria-label="Strikethrough" onclick={() => format('~~', '~~')}><Strikethrough size={16}/></button>{/snippet}
+{#snippet tool7()}<button class="icon" title="Bullet list" aria-label="Bullet list" onclick={() => format('- ', '', true)}><List size={17}/></button>{/snippet}
+{#snippet tool8()}<button class="icon" title="Numbered list" aria-label="Numbered list" onclick={() => format('1. ', '', true)}><ListOrdered size={17}/></button>{/snippet}
+{#snippet tool9()}<button class="icon" title="Checklist" aria-label="Checklist" onclick={() => format('- [ ] ', '', true)}><ListTodo size={17}/></button>{/snippet}
+{#snippet tool10()}<button class="icon" title="Block quote" aria-label="Block quote" onclick={() => format('> ', '', true)}><Quote size={16}/></button>{/snippet}
+{#snippet tool11()}<button class="icon" title="Insert link" aria-label="Insert link" onclick={() => format('[', '](https://)')}><Link size={16}/></button>{/snippet}
+{#snippet tool12()}<button class="icon" title="Inline code" aria-label="Inline code" onclick={() => format('`', '`')}><Code size={17}/></button>{/snippet}
+{#snippet tool13()}<button class="icon" title="Code block" aria-label="Code block" onclick={() => format('\n```text\n', '\n```\n')}><SquareCode size={17}/></button>{/snippet}
+{#snippet tool14()}<button class="icon" title="Table" aria-label="Insert table" onclick={() => format('\n| Column | Column |\n| --- | --- |\n| ', ' |  |\n')}><Table2 size={16}/></button>{/snippet}
+{#snippet tool15()}<button class="icon" title="Insert formula" aria-label="Insert formula" onclick={openFormula}><Sigma size={17}/></button>{/snippet}
+{#snippet tool16()}<button class="icon" title="Divider" aria-label="Insert divider" onclick={() => format('\n\n---\n\n')}><Minus size={16}/></button>{/snippet}
+{#snippet tool17()}<button class="icon" title="Image · upload or link" aria-label="Insert image" onclick={() => openMedia('image')}><ImagePlus size={18}/></button>{/snippet}
+{#snippet tool18()}<button class="icon" title="YouTube video" aria-label="Insert YouTube video" onclick={() => openMedia('youtube')}><Youtube size={18}/></button>{/snippet}
+{#snippet tool19()}<button class="icon" title="Audio · upload or record" aria-label="Insert audio" onclick={() => openMedia('audio')}><Mic size={17}/></button>{/snippet}
+        {#if mode !== 'preview'}<div class="formatting"><ResponsiveToolbar tools={[tool0,tool1,tool2,tool3,tool4,tool5,tool6,tool7,tool8,tool9,tool10,tool11,tool12,tool13,tool14,tool15,tool16,tool17,tool18,tool19]}/></div>{/if}
         {#if findOpen && mode !== 'preview'}<EditorFind bind:this={findPanel} body={editorBody} onmatches={(matches, activeStart) => { findMatches = matches; findActiveStart = activeStart; }} initialQuery={findInitialQuery} initialStart={findInitialStart} onselect={match => void revealSelection(match.start, match.end)} onclose={closeFind}/>{/if}
         <div class="writing" class:split={mode === 'split'} class:preview-only={mode === 'preview'}>
           {#if mode !== 'preview'}{#if formattedWriting && Surface}{#key view.document.id}<WritingEditor {Surface} body={editorBody} readOnly={historyBlocked} matches={findOpen ? findMatches : []} activeStart={findActiveStart} bind:surface={writingSurface} onchange={change => commitEditorBody(change.body, change.before, change.after, change.key)} onundo={() => applyHistory('undo')} onredo={() => applyHistory('redo')}/>{/key}{:else}<textarea class="editor" bind:this={sourceEditor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} oncompositionstart={() => { compositionKey = `composition:${++compositionSequence}`; }} oncompositionend={() => { compositionKey = null; pendingInput = null; }} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind} value={parsed.body} oninput={editorInput} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}{/if}
@@ -1144,4 +1141,6 @@
   .search{padding:4px 5px 4px 9px;margin:0 0 8px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}.search .icon{width:25px;height:27px}.search input{min-width:0}.list-heading{margin:7px 2px 6px;font-size:9px;letter-spacing:1.1px}.list-heading>span{display:flex;align-items:center;gap:6px}.list-heading small{font-size:9px;letter-spacing:0;opacity:.8}.list-heading-actions{display:flex;gap:0}.list-heading-actions .icon{width:26px;height:28px;color:var(--soft)}.sidebar-footer{margin-top:10px;padding-top:8px}.footer-tools{display:flex;align-items:center;gap:2px}.footer-tools small{flex:1;font-size:9px;color:var(--soft);padding-left:3px}.footer-tools .icon{width:28px;height:30px;color:var(--soft)}
   .list-heading-actions .recovery-copies{position:relative;color:var(--accent)}.recovery-copies small{position:absolute;right:-2px;top:-2px;min-width:12px;padding:1px 3px;border-radius:6px;background:var(--wash);color:var(--accent);font-size:8px;line-height:12px;letter-spacing:0}
   @media(pointer:coarse){.filter-tools>.icon{height:40px;width:40px}.library-picker .icon,.list-heading-actions .icon,.footer-tools .icon{height:38px;width:36px}.capture-actions button{height:42px}.filter-swatches button{min-height:58px}}
+
+  .formatting{overflow:visible!important;display:block}
 </style>

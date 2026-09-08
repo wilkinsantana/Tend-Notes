@@ -11,7 +11,7 @@ async function selectTemplate(page: Page, name = 'Grocery list') {
 
 test('templates preview Markdown and cancel without changing the current note at either step', async ({page}) => {
   await page.goto('/');
-  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor = page.getByRole('textbox', {name:'Note Markdown'});
   await editor.fill('My writing stays here.');
   await expect(page.getByRole('button', {name:'All changes saved', exact:true})).toBeVisible();
@@ -38,7 +38,7 @@ test('templates preview Markdown and cancel without changing the current note at
 
 test('reusing a template creates fresh Markdown while previous completed items survive', async ({page}) => {
   await page.goto('/');
-  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.getByRole('button', {name:'Preview', exact:true}).click();
   const create = await selectTemplate(page);
   const firstName = await create.getByLabel('Note name', {exact:true}).inputValue();
@@ -62,13 +62,13 @@ test('reusing a template creates fresh Markdown while previous completed items s
   expect(documents.find(d => d.name === firstName+'.md')?.content).toContain('- [x]');
   expect(documents.find(d => d.name === secondName+'.md')?.content).toEqual(firstBody);
   await page.reload();
-  await page.getByRole('button', {name:new RegExp(secondName+'.*Markdown')}).click();
+  await page.getByRole('button', {name:new RegExp(secondName+'.*Markdown')}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(editor).toHaveValue(firstBody);
 });
 
 test('a failed current save blocks template creation and preserves the recoverable draft', async ({page}) => {
   await page.goto('/');
-  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const before = await data(page);
   await page.evaluate(() => { (window as any).notesDemo.saveFails = true; });
   const editor = page.getByRole('textbox', {name:'Note Markdown'});
@@ -134,7 +134,7 @@ test('notebooks without creation support do not expose usable template creation'
 
 test('template creation waits for an in-flight current save before writing the new note', async ({page}) => {
   await page.goto('/');
-  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.evaluate(() => { (window as any).notesDemo.saveDelay = 2000; });
   const editor = page.getByRole('textbox', {name:'Note Markdown'});
   await editor.fill('Confirm this writing before making a template copy.');

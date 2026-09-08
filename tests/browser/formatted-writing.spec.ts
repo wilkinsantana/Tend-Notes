@@ -6,7 +6,7 @@ const undo = (page: Page) => page.getByRole('button', { name: 'Undo', exact: tru
 const redo = (page: Page) => page.getByRole('button', { name: 'Redo', exact: true });
 async function open(page: Page, body?: string) {
   await page.goto('/');
-  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click();
+  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   if (body !== undefined) await source(page).fill(body);
   await toggle(page).click();
   await expect(formatted(page)).toBeFocused();
@@ -81,7 +81,7 @@ test('opening and changing presentation preserve original CRLF bytes without sav
     Object.assign(window,{writingSaved:0});
     Storage.prototype.setItem=function(key,value){if(key==='tend-notes:demo-documents')(window as any).writingSaved++;return set.call(this,key,value)};
   },original);
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await toggle(page).click();
   await expect(formatted(page)).toBeVisible();
   await page.getByRole('button',{name:'Preview',exact:true}).click();
@@ -134,7 +134,7 @@ test('formatted code loads on demand, follows themes and preserves drafts on con
   const requested:string[]=[];
   page.on('request',request=>requested.push(request.url()));
   await page.goto('/');
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   expect(requested.some(url=>url.includes('/writingSurface.ts'))).toBe(false);
   await toggle(page).click();
   await expect(formatted(page)).toBeVisible();

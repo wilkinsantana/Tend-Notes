@@ -2,7 +2,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test';
 
 async function openNote(page: Page) {
   await page.goto('/');
-  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click();
+  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   return page.getByRole('textbox', { name: 'Note Markdown' });
 }
 async function position(editor: Locator, start: number, end = start) {

@@ -43,7 +43,7 @@ test('a marked note survives reload and creates a fresh unpinned copy without ch
 
 test('adding and removing the current template tag saves through the open note without deleting it', async ({page}) => {
   await page.goto('/');
-  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.getByRole('button', {name:'Templates', exact:true}).click();
   const dialog = picker(page);
   await dialog.getByRole('button', {name:'Add current note to templates', exact:true}).click();
@@ -59,7 +59,7 @@ test('adding and removing the current template tag saves through the open note w
 test('a failed current save keeps the template picker and recoverable draft intact', async ({page}) => {
   await page.goto('/');
   await seed(page, [source()]);
-  await page.getByRole('button', {name:/Weekly plan.*Markdown/}).click();
+  await page.getByRole('button', {name:/Weekly plan.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor = page.getByRole('textbox', {name:'Note Markdown'});
   await editor.fill('Do not lose this personal template draft.');
   await page.evaluate(() => { (window as any).notesDemo.saveFails = true; });
@@ -126,7 +126,7 @@ test('personal selection reads current source content and does nothing after the
 
 test('template use waits for a current tag save and the action remains usable after reopening', async ({page}) => {
   await page.goto('/');
-  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.getByRole('button', {name:'Templates', exact:true}).click();
   await page.evaluate(() => { (window as any).notesDemo.saveDelay = 1000; });
   const dialog = picker(page);
@@ -144,7 +144,7 @@ test('read-only notes cannot change their template tag, and the picker remains k
   await page.goto('/');
   const readonly = {...source('readonly'), canWrite:false};
   await seed(page, [readonly]);
-  await page.getByRole('button', {name:/Weekly plan.*Markdown/}).click();
+  await page.getByRole('button', {name:/Weekly plan.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.getByRole('button', {name:'Back to notes', exact:true}).click();
   await page.getByRole('button', {name:'Templates', exact:true}).click();
   const dialog = picker(page);

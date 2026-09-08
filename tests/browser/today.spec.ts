@@ -38,7 +38,7 @@ test('Today reopens an existing edited same-day note without replacing it', asyn
 
 test('Today does not abandon a draft when its pre-transition save fails', async ({page}) => {
   await page.goto('/');
-  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button', {name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor = page.getByRole('textbox', {name:'Note Markdown'});
   await page.evaluate(() => { (window as any).notesDemo.saveFails = true; });
   await editor.fill('Keep this unsaved draft before opening today.');

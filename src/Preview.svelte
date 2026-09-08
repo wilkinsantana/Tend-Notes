@@ -6,6 +6,13 @@
   const rendered = $derived(renderDocument(content));
   $effect(() => {
     const result = rendered, id = noteId;
+    // Wrap only tables; paragraphs retain the normal reading width.
+    for(const table of element.querySelectorAll('table')) {
+      if(table.parentElement?.classList.contains('table-scroll'))continue;
+      const wrapper=document.createElement('div');wrapper.className='table-scroll';
+      wrapper.tabIndex=0;wrapper.setAttribute('role','region');wrapper.setAttribute('aria-label','Scrollable table');
+      table.replaceWith(wrapper);wrapper.append(table);
+    }
     let active = true;
     const urls: string[] = [];
     async function load(button: HTMLButtonElement) {
@@ -51,4 +58,8 @@
 <div bind:this={element} class="rendered-markdown">{@html rendered.html}</div>
 <style>
   .rendered-markdown :global(strong){font-weight:700}.rendered-markdown :global(em){font-style:italic}.rendered-markdown :global(h1){font-size:1.8em}.rendered-markdown :global(h2){font-size:1.45em}.rendered-markdown :global(h3){font-size:1.2em}.rendered-markdown :global(ul){list-style:disc}.rendered-markdown :global(ol){list-style:decimal}.rendered-markdown :global(img){display:block;max-width:100%;height:auto;border-radius:8px;margin:12px 0}.rendered-markdown :global(audio){width:100%;margin:12px 0}.rendered-markdown :global(iframe){width:100%;aspect-ratio:16/9;border:0;border-radius:8px;margin:12px 0}.rendered-markdown :global(button[data-notes-media]){display:block;width:100%;padding:22px 16px;background:var(--wash);color:var(--accent);border:1px solid var(--line);border-radius:9px;text-align:left;margin:10px 0}.rendered-markdown :global(code){font-family:monospace;background:var(--wash);padding:2px 4px;border-radius:3px}.rendered-markdown :global(pre code){padding:0}.rendered-markdown :global(input){accent-color:var(--accent)}
+
+  .rendered-markdown :global(.table-scroll){max-width:100%;overflow-x:auto;margin:12px 0;overscroll-behavior-x:contain}
+  .rendered-markdown :global(.table-scroll table){width:max-content;min-width:100%;overflow-wrap:normal}
+  .rendered-markdown :global(.table-scroll th),.rendered-markdown :global(.table-scroll td){min-width:120px;max-width:360px}
 </style>

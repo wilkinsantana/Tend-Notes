@@ -20,13 +20,13 @@ test('create, save, recover, search inside text, safe preview and focus', async 
   await page.getByRole('textbox',{name:'Search your notes'}).fill('ultramarine');
   await expect(page.locator('.note')).toHaveCount(1);
   await page.reload();
-  await page.getByRole('button',{name:/Project journal.*Markdown/}).click();
+  await page.getByRole('button',{name:/Project journal.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(editor).toHaveValue(/ultramarine/);
 });
 
 test('narrow panel and onboarding handoff', async ({page}) => {
   await page.setViewportSize({width:390,height:780}); await page.goto('/');
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(page.getByRole('textbox',{name:'Note Markdown'})).toBeVisible();
   await expect(page.locator('aside')).toBeHidden();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -51,7 +51,7 @@ test('a populated notebook continues the most recently modified loaded note in w
   await expect(editor).toHaveValue('# Recent note'); await expect(editor).toBeFocused();
   await page.getByRole('button',{name:'Preview',exact:true}).click();
   await page.setViewportSize({width:390,height:780}); await page.getByRole('button',{name:'Back to notes'}).click();
-  await page.locator('.continue-writing').click();
+  await page.locator('.continue-writing').click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(editor).toHaveValue('# Recent note'); await expect(editor).toBeFocused();
 });
 
@@ -125,18 +125,18 @@ test('a quick capture offers a sanitized first-line title without risking conten
 
 test('a failed save cannot switch away from an editable draft', async ({page}) => {
   await page.goto('/');
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.evaluate(()=>{(window as any).notesDemo.saveFails=true; Storage.prototype.setItem=function(){throw new Error('quota');};});
   const editor=page.getByRole('textbox',{name:'Note Markdown'}); await editor.fill('Keep this unsaved thought');
   await page.getByRole('button',{name:'Save now'}).click();
   await expect(page.getByText('Demo connection interrupted')).toBeVisible();
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(editor).toHaveValue('Keep this unsaved thought'); await expect(editor).toBeEditable();
 });
 
 test('two tabs refresh saved content and keep conflicting drafts', async ({page,context}) => {
   await page.goto('/'); const other=await context.newPage(); await other.goto('/');
-  for(const tab of [page,other]) await tab.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  for(const tab of [page,other]) {await tab.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await tab.getByRole('button',{name:'Edit Markdown',exact:true}).click();}
   await page.getByRole('textbox',{name:'Note Markdown'}).fill('A note from the first device');
   await expect(page.getByRole('button',{name:'All changes saved'})).toBeVisible();
   await other.bringToFront();
@@ -156,7 +156,7 @@ test('duplicated client state still gets separate recovery keys', async ({page,c
   await page.goto('/'); await page.evaluate(()=>sessionStorage.setItem('tend-notes:client','copied-tab'));
   const second=await context.newPage(); await second.addInitScript(()=>sessionStorage.setItem('tend-notes:client','copied-tab')); await second.goto('/');
   for(const tab of [page,second]) {
-    await tab.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+    await tab.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await tab.getByRole('button',{name:'Edit Markdown',exact:true}).click();
     await tab.evaluate(()=>{(window as any).notesDemo.saveFails=true;});
     await tab.getByRole('textbox',{name:'Note Markdown'}).fill(tab===page?'first draft':'second draft');
   }
@@ -165,7 +165,7 @@ test('duplicated client state still gets separate recovery keys', async ({page,c
 });
 
 test('notebook switching flushes newer typing and freezes transition edits', async ({page}) => {
-  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.evaluate(()=>{(window as any).notesDemo.saveDelay=700;});
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await editor.fill('First captured version'); await page.getByRole('button',{name:'Save now'}).click();
@@ -174,12 +174,12 @@ test('notebook switching flushes newer typing and freezes transition edits', asy
   await expect(editor).not.toBeEditable();
   await expect(page.getByText('Make room for an idea.')).toBeVisible();
   await page.getByLabel('Notebook',{exact:true}).selectOption('personal');
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(editor).toHaveValue('Newer typing before switching');
 });
 
 test('an unsaved browser recovery copy survives a reload', async ({page}) => {
-  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.evaluate(()=>{(window as any).notesDemo.saveFails=true;});
   await page.getByRole('textbox',{name:'Note Markdown'}).fill('A thought rescued after reload');
   await page.getByRole('button',{name:'Save now'}).click();
@@ -195,9 +195,9 @@ test('narrow existing notebook exposes setup and recovery entries', async ({page
   await page.setViewportSize({width:390,height:780}); await page.goto('/?unconnected');
   await expect(page.locator('.continue-writing')).toBeVisible();
   await expect(page.getByRole('button',{name:'Quick capture',exact:true})).toBeDisabled();
-  await page.locator('.continue-writing').click();
+  await page.locator('.continue-writing').click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(page.getByRole('textbox',{name:'Note Markdown'})).toBeVisible();
-  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.evaluate(()=>{(window as any).notesDemo.saveFails=true;});
   await page.getByRole('textbox',{name:'Note Markdown'}).fill('Narrow recovery');
   await page.reload(); await page.getByRole('button',{name:/Recovery copies/}).click();
@@ -206,7 +206,7 @@ test('narrow existing notebook exposes setup and recovery entries', async ({page
 });
 
 test('Tend color tokens update immediately without remounting or losing text', async ({page}) => {
-  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await editor.fill('Keep my writing while themes change');
   const app=page.locator('.notes-app');
@@ -252,7 +252,7 @@ test('dialogs remain usable with host modal styles and deletion requires confirm
 });
 
 test('tags, pins and theme-aware colors organize notes without exposing metadata in the editor', async ({page}) => {
-  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor=page.getByRole('textbox',{name:'Note Markdown'});const original=await editor.inputValue();
   await page.getByRole('button',{name:'Pin note',exact:true}).click();
   await page.getByRole('button',{name:'Organize note'}).click();
@@ -272,7 +272,7 @@ test('tags, pins and theme-aware colors organize notes without exposing metadata
   await page.getByRole('button',{name:'Filter note color',exact:true}).click();
   await page.getByRole('button',{name:'Sage',exact:true}).click();
   await expect(page.locator('.note-list .note')).toHaveCount(1);
-  await page.reload();await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.reload();await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(page.getByRole('button',{name:'Unpin note',exact:true})).toHaveAttribute('aria-pressed','true');
   await expect(editor).toHaveValue(original);
   await page.getByRole('button',{name:'Preview light theme'}).click();
@@ -332,7 +332,7 @@ test('notebook and backup destination setup stay inside Notes and preserve cance
 
 test('preview and split render Markdown, keep code literal, and split toggles off', async ({page})=>{
   await page.goto('/');
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await editor.fill('# Real heading\n\n**Hello! **\n\n- One\n- Two\n\n> A quote\n\n```js\nconst sample = "**raw **";\n```');
   await page.getByRole('button',{name:'Split view',exact:true}).click();
@@ -354,7 +354,7 @@ test('preview and split render Markdown, keep code literal, and split toggles of
 
 test('list actions rename, pin, color and delete another note without opening it',async({page})=>{
   await page.goto('/');
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   const writing=await editor.inputValue();
   await page.getByRole('button',{name:'New note',exact:true}).click();
@@ -383,7 +383,7 @@ test('list actions rename, pin, color and delete another note without opening it
 });
 
 test('media is portable, remote loads require a click, and raw HTML cannot create embeds',async({page})=>{
-  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.getByRole('button',{name:'Insert image',exact:true}).click();
   await page.getByLabel('Media description').fill('One pixel');
   await page.getByLabel('Image file',{exact:true}).setInputFiles({name:'pixel.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=','base64')});
@@ -414,7 +414,7 @@ test('recording stops on close and a finished clip can be inserted as portable a
     }
     Object.assign(window,{MediaRecorder:Recorder});
   });
-  await page.goto('/');await page.locator('.note-open').first().click();
+  await page.goto('/');await page.locator('.note-open').first().click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.getByRole('button',{name:'Insert audio',exact:true}).click();
   await page.getByRole('button',{name:'Record audio',exact:true}).click();
   await expect(page.getByRole('button',{name:/Stop recording/})).toBeVisible();
@@ -433,7 +433,7 @@ test('recording stops on close and a finished clip can be inserted as portable a
 });
 
 test('media insertion never applies old offsets to a refreshed remote document',async({page})=>{
-  await page.goto('/');await page.locator('.note-open').first().click();
+  await page.goto('/');await page.locator('.note-open').first().click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor=page.getByLabel('Note Markdown');
   await editor.fill('Original text');await expect(page.getByRole('button',{name:'All changes saved',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Insert image',exact:true}).click();
@@ -451,7 +451,7 @@ test('media insertion never applies old offsets to a refreshed remote document',
 
 test('Enter continues Markdown lists, tasks and quotes, and empty markers exit', async ({page}) => {
   await page.goto('/');
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await editor.fill('1. First');
   await editor.press('End'); await editor.press('Enter');
@@ -462,7 +462,7 @@ test('Enter continues Markdown lists, tasks and quotes, and empty markers exit',
   await expect(editor).toHaveValue('1. First\n2. Second\n\n');
   await editor.pressSequentially('After the list');
   await expect(page.getByRole('button',{name:'All changes saved'})).toBeVisible();
-  await page.reload(); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.reload(); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(editor).toHaveValue('1. First\n2. Second\n\nAfter the list');
   await page.getByRole('button',{name:'Preview',exact:true}).click();
   await expect(page.locator('.preview .rendered-markdown > p')).toHaveText('After the list');
@@ -480,7 +480,7 @@ test('Enter continues Markdown lists, tasks and quotes, and empty markers exit',
 });
 
 test('Markdown keyboard edits preserve undo, plain newlines, code and selection', async ({page}) => {
-  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await editor.fill('9. Last'); await editor.press('End'); await editor.press('Enter');
   await expect(editor).toHaveValue('9. Last\n10. ');
@@ -499,7 +499,7 @@ test('Markdown keyboard edits preserve undo, plain newlines, code and selection'
 
 test('mobile line-break input continues a list without handling paste or composition', async ({page}) => {
   await page.setViewportSize({width:390,height:780}); await page.goto('/');
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await editor.fill('- [X] Done'); await editor.press('End');
   await editor.evaluate(node=>node.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertLineBreak',bubbles:true,cancelable:true})));
@@ -513,7 +513,7 @@ test('mobile line-break input continues a list without handling paste or composi
 });
 
 test('panel transparency changes canvas and sidebar without fading text or dialogs', async ({page}) => {
-  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await editor.fill('Keep this draft while changing the panel background.');
   const backgroundAlpha=(selector:string)=>page.locator(selector).evaluate(element=>{

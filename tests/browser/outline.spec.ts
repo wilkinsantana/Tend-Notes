@@ -4,7 +4,7 @@ const longDraft = () => ['# Opening', ...Array.from({ length: 70 }, (_, index) =
 
 test('outline jumps an unsaved long draft to the exact source heading without editing it', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click();
+  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor = page.getByRole('textbox', { name: 'Note Markdown' });
   const draft = longDraft();
   await editor.fill(draft);
@@ -20,7 +20,7 @@ test('outline jumps an unsaved long draft to the exact source heading without ed
 });
 
 test('outline is keyboard-dismissible, restores its trigger, and dismisses outside clicks', async ({ page }) => {
-  await page.goto('/'); await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click();
+  await page.goto('/'); await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const trigger = page.getByRole('button', { name: 'Note outline', exact: true });
   await trigger.click(); await expect(page.getByRole('dialog', { name: 'Note outline', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -31,7 +31,7 @@ test('outline is keyboard-dismissible, restores its trigger, and dismisses outsi
 });
 
 test('outline deliberately opens source from Preview and Split without changing the draft', async ({ page }) => {
-  await page.goto('/'); await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click();
+  await page.goto('/'); await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor = page.getByRole('textbox', { name: 'Note Markdown' });
   const draft = '# Top\n\n## Middle\n\nWriting stays intact.';
   await editor.fill(draft);
@@ -45,7 +45,7 @@ test('outline deliberately opens source from Preview and Split without changing 
 
 test('outline stays inside a narrow panel', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 }); await page.goto('/');
-  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click();
+  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.getByRole('button', { name: 'Note outline', exact: true }).click();
   const outline = page.getByRole('dialog', { name: 'Note outline', exact: true });
   await expect(outline).toBeVisible();
@@ -57,7 +57,7 @@ test('outline stays inside a narrow panel', async ({ page }) => {
 test('outline reveals headings after soft-wrapped paragraphs', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 600 });
   await page.goto('/');
-  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click();
+  await page.getByRole('button', { name: /Small things worth keeping.*Markdown/ }).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const editor = page.getByRole('textbox', { name: 'Note Markdown' });
   const draft = '# Start\n\n' + 'A paragraph that wraps naturally across many visual lines. '.repeat(250) + '\n\n## Destination\nFinal thought';
   await editor.fill(draft);

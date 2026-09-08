@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 test('formulas preview, insert, render and undo as portable Markdown',async({page})=>{
   await page.goto('/');
-  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const source=page.getByRole('textbox',{name:'Note Markdown'});
   await source.fill('An equation: '); await source.press('Control+End');
   await page.getByRole('button',{name:'Insert formula',exact:true}).click();
@@ -22,7 +22,7 @@ test('formulas preview, insert, render and undo as portable Markdown',async({pag
   await expect(source).toHaveValue('An equation: ');
 });
 test('code and source HTML stay literal; malformed formulas stay editable',async({page})=>{
-  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.getByRole('textbox',{name:'Note Markdown'}).fill('`$x$`\n\n```\n$$\nx\n$$\n```\n\n$$\n\\sqrt{x}\n$$\n\n<span data-notes-math="0">fake</span>');
   await page.getByRole('button',{name:'Preview',exact:true}).click();
   await expect(page.locator('.rendered-markdown math')).toHaveCount(1);
@@ -35,7 +35,7 @@ test('code and source HTML stay literal; malformed formulas stay editable',async
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 test('rich writing hides inactive syntax without modifying Markdown',async({page})=>{
-  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const source=page.getByRole('textbox',{name:'Note Markdown'});
   const text='# Heading\n\n**Bold** and *italic*.\n\nWrite here';
   await source.fill(text); await source.press('Control+End');
@@ -48,7 +48,7 @@ test('rich writing hides inactive syntax without modifying Markdown',async({page
 });
 
  test('rich checklist clicks share source and undo history',async({page})=>{
-  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const source=page.getByRole('textbox',{name:'Note Markdown'});
   await source.fill('- [ ] Buy milk\n\nWriting');await source.press('Control+End');
   await page.getByRole('button',{name:'Rich text writing',exact:true}).click();
@@ -65,7 +65,7 @@ test('rich writing hides inactive syntax without modifying Markdown',async({page
 });
 
 test('writing mode controls sit together and enter writing from Preview',async({page})=>{
-  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const modes=page.getByLabel('Editor view',{exact:true});
   await expect(modes.getByRole('button')).toHaveCount(4);
   await expect(modes.getByRole('button').nth(1)).toHaveAccessibleName('Rich text writing');
@@ -77,7 +77,7 @@ test('writing mode controls sit together and enter writing from Preview',async({
 });
 
 test('rich selection stays blue through focus and theme changes',async({page})=>{
-  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.getByRole('button',{name:'Rich text writing',exact:true}).click();
   const rich=page.getByRole('textbox',{name:'Formatted Markdown'});
   await rich.press('Control+a');
