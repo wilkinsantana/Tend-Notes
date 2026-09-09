@@ -338,8 +338,10 @@ assets only. `setDefaultVoice(id)` sets a device preference.
 bounded text snapshot. `previewVoice(id, options)` uses a fixed preview phrase.
 Each audio chunk carries `{index, pcm, sampleRate:24000, sampleCount}`; `pcm` is
 transferred Float32 PCM, not a remotely hosted audio URL. The host waits for the
-promise returned by `onChunk` before producing another chunk. Notes awaits local
-playback completion, so pausing cannot accumulate unbounded synthesized audio.
+promise returned by `onChunk` before producing another chunk. Notes acknowledges each chunk after scheduling it into a bounded playback
+queue (current plus next chunk, with at most one producer waiting for room).
+Synthesis can run during playback; the caller drains queued audio before
+completion. Pausing freezes the audio timeline and stops further queue growth.
 `cancel()` and `dispose()` release synthesis; Notes separately stops its audio
 context. Microphone capture and read-aloud are mutually exclusive in the UI.
 

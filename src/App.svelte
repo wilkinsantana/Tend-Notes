@@ -504,6 +504,7 @@
     try {
       await playback.ready;
       await speechReplay.speak(tts, {text, signal: request.signal, onProgress: progress => { if (ticket === readSequence) readProgress = {completed: progress.completed, total: progress.total}; }, onChunk: chunk => playback.play(chunk)}, scope === 'Selected text');
+      await playback.drain();
       if (ticket === readSequence) stopReadAloud();
     } catch (cause) {
       if (ticket === readSequence && !request.signal.aborted) stopReadAloud(message(cause));

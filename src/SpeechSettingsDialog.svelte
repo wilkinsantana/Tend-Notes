@@ -97,7 +97,7 @@
     try { playback = createSpeechPlayback(); }
     catch (cause) { ttsError = cause instanceof Error ? cause.message : 'Audio playback is unavailable in this browser.'; return; }
     ttsController = request; previewPlayback = playback; ttsTask = 'preview'; ttsError = '';
-    try { await playback.ready; await tts.previewVoice(selectedVoice, {signal: request.signal, onChunk: chunk => playback.play(chunk)}); }
+    try { await playback.ready; await tts.previewVoice(selectedVoice, {signal: request.signal, onChunk: chunk => playback.play(chunk)}); await playback.drain(); }
     catch (cause) { if (alive && !request.signal.aborted) ttsError = cause instanceof Error ? cause.message : 'The voice preview could not play.'; }
     finally { if (ttsController === request) { ttsController = null; previewPlayback?.stop(); previewPlayback = null; if (alive) ttsTask = ''; } }
   }

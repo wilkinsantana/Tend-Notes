@@ -1,6 +1,6 @@
 {
   "name": "tend-notes",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "private": true,
   "description": "Your thoughts, in Markdown. The native notes extension for Tend.",
   "license": "MIT",

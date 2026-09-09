@@ -163,3 +163,31 @@ test('toolbar groups audio separately and preserves labeled groups in mobile ove
   await expect(page.getByRole('group',{name:'Tables and formulas',exact:true})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
+
+test('long reading prepares following chunks during audio playback and drains the tail',async({page})=>{
+  await fixture(page);await page.goto('/');
+  await page.getByRole('button',{name:'Device speech settings',exact:true}).click();
+  const setup=page.getByRole('dialog',{name:'Device speech settings'});
+  await setup.getByRole('button',{name:/Download read-aloud model/}).click();
+  await setup.getByRole('button',{name:'Download voice',exact:true}).click();
+  await setup.getByRole('button',{name:'Close speech settings'}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.evaluate(()=>{
+    const w=window as any, Original=window.AudioContext;
+    w.audioEvidence={ended:0,secondQueuedBeforeEnd:false};
+    w.AudioContext=class extends Original{
+      createBufferSource(){const node=super.createBufferSource();node.addEventListener('ended',()=>w.audioEvidence.ended++);return node;}
+    };
+    w.notesSpeechFixture.tts.synthesize=async(o:any)=>{
+      for(let i=0;i<3;i++){
+        await new Promise(resolve=>setTimeout(resolve,80));
+        await o.onChunk({segmentIndex:0,index:i,pcm:new Float32Array(24000).buffer,sampleRate:24000,sampleCount:24000});
+        if(i===1)w.audioEvidence.secondQueuedBeforeEnd=w.audioEvidence.ended===0;
+      }
+      return {sampleRate:24000,chunks:3,sampleCount:72000};
+    };
+  });
+  const read=page.getByRole('button',{name:'Read selection or note aloud',exact:true});
+  await read.click();await expect(read).toBeEnabled({timeout:10000});
+  expect(await page.evaluate(()=>(window as any).audioEvidence)).toEqual({ended:3,secondQueuedBeforeEnd:true});
+});
