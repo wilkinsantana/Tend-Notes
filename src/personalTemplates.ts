@@ -2,6 +2,7 @@ import type { Documents, Note, Page } from './host';
 import { unpack, withOrganization } from './organization';
 import type { NoteTemplate } from './templates';
 import { Marked } from 'marked';
+import { attachmentPattern } from './markdown';
 
 /** A visible, portable tag is the complete template designation. */
 export const TEMPLATE_TAG = 'template';
@@ -27,7 +28,7 @@ export function personalTemplateContent(content: string): string {
   let localAttachment = false;
   parser.walkTokens(parser.lexer(unpack(content).body), token => {
     if ((token.type === 'image' || token.type === 'link')
-      && /^attachments\/[a-f0-9]{64}\.(?:png|jpg|gif|webp|ogg|webm|mp3|m4a|wav)$/.test(token.href)) {
+      && attachmentPattern.test(token.href)) {
       localAttachment = true;
     }
   });

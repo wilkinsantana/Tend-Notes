@@ -57,6 +57,8 @@ test('selection reads the latest canonical template and refuses moved or unmarke
 test('relative uploads cannot silently become broken media in a fresh template copy', () => {
   const local = `![Picture](attachments/${'a'.repeat(64)}.png)`;
   expect(() => personalTemplateContent(markPersonalTemplate(local, true))).toThrow('uploaded media');
+  const pdf = `[Plan](attachments/${'b'.repeat(64)}.pdf)`;
+  expect(() => personalTemplateContent(markPersonalTemplate(pdf, true))).toThrow('uploaded media');
   const linked = '![Picture](https://example.org/picture.png)';
   expect(unpack(personalTemplateContent(markPersonalTemplate(linked, true))).body).toBe(linked);
 });

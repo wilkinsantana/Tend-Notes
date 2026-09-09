@@ -2,7 +2,7 @@ import { linkedNoteId } from './backlinks';
 import { renderFormula } from './math';
 import { Marked } from 'marked';
 import DOMPurify from 'dompurify';
-export const attachmentPattern = /^attachments\/[a-f0-9]{64}\.(?:png|jpg|gif|webp|ogg|webm|mp3|m4a|wav)$/;
+export const attachmentPattern = /^attachments\/[a-f0-9]{64}\.(?:png|jpg|gif|webp|ogg|webm|mp3|m4a|wav|pdf)$/;
 export function youtubeId(raw: string): string | null {
   try {
     const url = new URL(raw);
@@ -13,7 +13,7 @@ export function youtubeId(raw: string): string | null {
   } catch { return null; }
 }
 const escape = (text: string) => text.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-export interface Media {kind: 'image' | 'audio' | 'youtube'; url: string; label: string; local: boolean}
+export interface Media {kind: 'image' | 'audio' | 'document' | 'youtube'; url: string; label: string; local: boolean}
 export function renderDocument(content: string): {html: string; media: Media[]} {
   const media: Media[] = [];
   const formulas: string[] = [];
@@ -24,7 +24,7 @@ export function renderDocument(content: string): {html: string; media: Media[]} 
   };
   const placeholder = (item: Media) => {
     const index = media.push(item) - 1;
-    return `<button type="button" data-notes-media="${index}">${escape(item.kind === 'youtube' ? 'Load YouTube video' : item.local ? `Open ${item.kind}: ${item.label}` : `Load external image: ${item.label}`)}</button>`;
+    return `<button type="button" data-notes-media="${index}">${escape(item.kind === 'youtube' ? 'Load YouTube video' : item.kind === 'document' ? `Download PDF: ${item.label}` : item.local ? `Open ${item.kind}: ${item.label}` : `Load external image: ${item.label}`)}</button>`;
   };
   const parser = new Marked({gfm:true, breaks:false, async:false, renderer:{
     // Source HTML cannot manufacture trusted media placeholders or executable elements.
@@ -39,7 +39,7 @@ export function renderDocument(content: string): {html: string; media: Media[]} 
       if (noteId) return `<button type="button" data-notes-link="${escape(noteId)}">${this.parser.parseInline(tokens)}</button>`;
       const video = youtubeId(href);
       if (video) return placeholder({kind:'youtube',url:video,label:text || 'YouTube video',local:false});
-      if (attachmentPattern.test(href)) return placeholder({kind:/\.(ogg|webm|mp3|m4a|wav)$/.test(href)?'audio':'image',url:href,label:text || 'Attachment',local:true});
+      if (attachmentPattern.test(href)) return placeholder({kind:/\.pdf$/.test(href)?'document':/\.(ogg|webm|mp3|m4a|wav)$/.test(href)?'audio':'image',url:href,label:text || 'Attachment',local:true});
       return /^(https:\/\/|mailto:)/i.test(href) ? `<a href="${escape(href)}" rel="noopener noreferrer" target="_blank">${this.parser.parseInline(tokens)}</a>` : escape(text);
     }
   }});

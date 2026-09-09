@@ -219,3 +219,17 @@ The current implementation and candidate reconciliation are tracked in
 editing and on-demand backlinks; saved smart views follow. Preserve existing
 recovery, task and offline foundations. Real-device acceptance, stable link
 identity, rendered embedded blocks and host version history remain open gates.
+
+## 0.8.0 — Shared notes and durable attachments
+
+Implemented with the matching host's optional sharing v1 capability: expiring
+view/edit links, optional passcodes, QR/email drafts, direct guest entry, shared
+source/rich writing, per-author Undo, presence, and durable image/audio/PDF
+attachments. Explicit owner recovery preserves acknowledged, current and pending
+branches. Private full saves and offline replay are fenced while sharing is active.
+
+Guest editing is online-first; persistent guest offline reload is not part of
+this release. Account-authenticated Notes-only entry and existing-note offline
+sync remain separate host capabilities. Physical Android/iPhone acceptance and
+installed-release verification remain open; local and emulated tests do not
+close them. Broader TendDrop live exchange is not required for durable uploads.

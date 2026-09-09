@@ -307,3 +307,26 @@ Preview opens the linked note through the normal save protection.
 These links belong to this Tend instance. Renaming, moving or exporting notes
 may change their identifiers and break links. Searches are on demand and bounded;
 partial or offline results are explicitly identified.
+
+## Share a note
+
+With a compatible updated Tend host, open a note and choose **Share note**.
+Create a view-only or editable link, choose its expiry, and optionally add a
+passcode. Copy the link, show its QR code, or open an email draft. Share the
+passcode separately. Anyone receiving a forwarded link can use its permissions
+until expiry or revocation.
+
+The shared editor opens directly without a Tend account. It starts in reading
+view and offers Markdown or rich writing for editors, other participants'
+cursors, and Undo that affects only your own edits. Enable attachments when
+creating an editable link to allow image, audio and PDF uploads. PDFs download
+explicitly. Attachments use the owner's durable Notes storage.
+
+While sharing is active, use the shared editor rather than private/offline
+edits. Shared guests need an online connection; disconnected open pages retain
+the draft and let you download it. They do not offer offline reload.
+
+**Pause sharing and prepare recovery copies** preserves the last acknowledged
+copy, current saved note and any pending candidate. Download the versions you
+need, stop sharing, reconcile privately, and create a new link to resume.
+Never assume a failed or interrupted save was accepted.

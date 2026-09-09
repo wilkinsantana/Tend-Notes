@@ -1,6 +1,8 @@
 import { mount, unmount } from 'svelte';
 import App from './App.svelte';
 import type { Host } from './host';
+import SharedNote from './SharedNote.svelte';
+import type { SharedHost } from './sharedHost';
 export function activate(host: Host) {
   return { mount(container: HTMLElement) {
     const instance = mount(App, { target: container, props: { host } });
@@ -13,4 +15,10 @@ export function activate(host: Host) {
     observer.observe(container);
     return { async unmount() { observer.disconnect(); container.removeEventListener('tend-notes:new-note',newNote); delete container.dataset.notesHeaderAction; await instance.flush?.(); await unmount(instance); } };
   } };
+}
+
+export function mountShared(host: SharedHost, container: HTMLElement) {
+  if (host.version !== 1) throw new Error('Update Tend to open this shared note.');
+  const instance = mount(SharedNote, { target: container, props: { host } });
+  return { async unmount() { await unmount(instance); } };
 }

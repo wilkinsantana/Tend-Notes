@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { X, Mic, Square, Upload, ImagePlus, Youtube, Trash2 } from 'lucide-svelte';
+  import { X, Mic, Square, Upload, ImagePlus, Youtube, Trash2, FileText } from 'lucide-svelte';
   import type { Documents } from './host';
   import { youtubeId } from './markdown';
-  let {kind,documents,noteId,insert,close}: {kind:'image'|'youtube'|'audio';documents:Documents;noteId:string;insert:(markdown:string)=>void;close:()=>void}=$props();
+  let {kind,documents,noteId,insert,close}: {kind:'image'|'youtube'|'audio'|'document';documents:Documents;noteId:string;insert:(markdown:string)=>void;close:()=>void}=$props();
   let url=$state(''), label=$state(''), error=$state(''), busy=$state(false), requesting=$state(false), recording=$state(false), stopping=$state(false), seconds=$state(0);
   let recordingBlob=$state<Blob|null>(null), recordingUrl=$state('');
   let recorder: MediaRecorder|undefined, stream: MediaStream|undefined, timer: ReturnType<typeof setInterval>|undefined, alive=true;
@@ -37,7 +37,7 @@
     if(!documents.attachments){error='Update Tend to save attachments.';return;}
     if(!file.size || file.size>MAX){error='Choose a nonempty file up to 20 MB.';return;}
     busy=true;error='';
-    try { const result=await documents.attachments.upload(noteId,file);if(alive)insert(`${kind==='image'?'!':''}[${text(label)|| (kind==='image'?'Image':'Audio note')}](${result.path})`); }
+    try { const result=await documents.attachments.upload(noteId,file);if(alive)insert(`${kind==='image'?'!':''}[${text(label)|| (file instanceof File && text(file.name)) || (kind==='image'?'Image':kind==='document'?'PDF document':'Audio note')}](${result.path})`); }
     catch(e){if(alive)error=e instanceof Error?e.message:'Upload failed. Try again.';}
     finally{busy=false;}
   }
@@ -56,15 +56,15 @@
     node.addEventListener('keydown',key);return{destroy(){node.removeEventListener('keydown',key);previous?.focus();}};
   }
 </script>
-<div class="media-layer" role="presentation"><div class="media-dialog" role="dialog" aria-modal="true" aria-label={kind==='youtube'?'Insert YouTube video':kind==='image'?'Insert image':'Insert audio'} tabindex="-1" use:focusDialog>
+<div class="media-layer" role="presentation"><div class="media-dialog" role="dialog" aria-modal="true" aria-label={kind==='youtube'?'Insert YouTube video':kind==='image'?'Insert image':kind==='document'?'Attach PDF':'Insert audio'} tabindex="-1" use:focusDialog>
   <button class="close" aria-label="Close media dialog" onclick={close} disabled={busy}><X size={18}/></button>
-  {#if kind==='image'}<ImagePlus size={25}/>{:else if kind==='youtube'}<Youtube size={27}/>{:else}<Mic size={25}/>{/if}
-  <h2>{kind==='image'?'Add an image':kind==='youtube'?'Add a video':'Keep a voice note'}</h2>
-  <label>Description<input aria-label="Media description" bind:value={label} placeholder={kind==='audio'?'What is this recording about?':'A useful description'} maxlength="160" disabled={busy}/></label>
-  {#if kind!=='audio'}<form onsubmit={e=>{e.preventDefault();addLink();}}><label>{kind==='youtube'?'YouTube link':'Image link'}<input aria-label={kind==='youtube'?'YouTube link':'Image link'} type="url" maxlength="2048" bind:value={url} placeholder="https://" required disabled={busy}/></label><small>External content loads only when you choose to view it.</small><button class="primary" disabled={busy||!url.trim()}>Insert link</button></form>{/if}
+  {#if kind==='image'}<ImagePlus size={25}/>{:else if kind==='youtube'}<Youtube size={27}/>{:else if kind==='document'}<FileText size={25}/>{:else}<Mic size={25}/>{/if}
+  <h2>{kind==='image'?'Add an image':kind==='youtube'?'Add a video':kind==='document'?'Attach a PDF':'Keep a voice note'}</h2>
+  <label>{kind==='document'?'Filename':'Description'}<input aria-label={kind==='document'?'PDF filename':'Media description'} bind:value={label} placeholder={kind==='document'?'Leave blank to use the PDF filename':kind==='audio'?'What is this recording about?':'A useful description'} maxlength="160" disabled={busy}/></label>
+  {#if kind!=='audio' && kind!=='document'}<form onsubmit={e=>{e.preventDefault();addLink();}}><label>{kind==='youtube'?'YouTube link':'Image link'}<input aria-label={kind==='youtube'?'YouTube link':'Image link'} type="url" maxlength="2048" bind:value={url} placeholder="https://" required disabled={busy}/></label><small>External content loads only when you choose to view it.</small><button class="primary" disabled={busy||!url.trim()}>Insert link</button></form>{/if}
   {#if kind!=='youtube'}
-    <label class="file-label"><Upload size={16}/> {kind==='image'?'Upload an image':'Upload audio'}<input aria-label={kind==='image'?'Image file':'Audio file'} type="file" accept={kind==='image'?'image/png,image/jpeg,image/gif,image/webp':'audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/webm,.webm'} disabled={busy||recording||!documents.attachments} onchange={e=>{const file=e.currentTarget.files?.[0];if(file)void upload(file);}}/></label>
-    <small>{kind==='image'?'PNG, JPEG, GIF, or WebP':'MP3, M4A, WAV, Ogg, or WebM'} · up to 20 MB. Stored with your Markdown and included in ZIP backups.</small>
+    <label class="file-label"><Upload size={16}/> {kind==='image'?'Upload an image':kind==='document'?'Choose a PDF':'Upload audio'}<input aria-label={kind==='image'?'Image file':kind==='document'?'PDF file':'Audio file'} type="file" accept={kind==='image'?'image/png,image/jpeg,image/gif,image/webp':kind==='document'?'application/pdf,.pdf':'audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/webm,.webm'} disabled={busy||recording||!documents.attachments} onchange={e=>{const file=e.currentTarget.files?.[0];if(file)void upload(file);}}/></label>
+    <small>{kind==='image'?'PNG, JPEG, GIF, or WebP':kind==='document'?'PDF only':'MP3, M4A, WAV, Ogg, or WebM'} · up to 20 MB. Stored with your Markdown and included in ZIP backups.</small>
     {#if !documents.attachments}<p role="status">Update Tend to enable uploads and recordings.</p>{/if}
   {/if}
   {#if kind==='audio'}<div class="recording-tools">{#if recording}<button class="record-stop" disabled={stopping} onclick={disposeRecording}><Square size={15}/> {stopping?'Finishing recording…':'Stop recording'} · {Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')}</button>{:else}<button onclick={()=>void record()} disabled={busy||requesting||!documents.attachments}><Mic size={16}/>{requesting?'Requesting microphone…':'Record audio'}</button>{/if}<small>Up to 5 minutes. Your microphone stops when you close this dialog.</small></div>

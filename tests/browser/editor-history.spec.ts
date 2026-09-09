@@ -78,6 +78,19 @@ test('inserted media is one reversible step without removing its surrounding wri
   await redo(page).click(); await expect(editor).toHaveValue(inserted);
 });
 
+test('a PDF upload inserts a canonical Markdown link and previews only a download card', async ({page}) => {
+  const editor = await open(page);
+  await page.getByRole('button',{name:'Attach PDF',exact:true}).click();
+  await page.getByRole('button',{name:'PDF file',exact:true}).setInputFiles({name:'project [draft].pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.7\n')});
+  await expect(editor).toHaveValue(/\[project  draft .pdf\]\(attachments\/[a-f0-9]{64}\.pdf\)/);
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  const card=page.getByRole('button',{name:'Download PDF: project  draft .pdf',exact:true});
+  await expect(card).toBeVisible();
+  await expect(page.locator('.preview iframe')).toHaveCount(0);
+  await card.click();
+  await expect(page.locator('.document-download')).toHaveAttribute('download','project  draft .pdf');
+});
+
 test('composition updates form one undo step and native history input uses the same stack', async ({page}) => {
   const editor = await open(page);
   await editor.fill('');

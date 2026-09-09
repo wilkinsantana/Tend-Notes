@@ -5,6 +5,37 @@ The official package ID is `host.tend.notes`. It declares `documents.read`,
 `host.documents.version` must be `1`; older hosts receive an update message.
 The source contract is typed in `src/host.ts`.
 
+## Optional shared-note capability
+
+`documents.sharing.version === 1` adds owner link creation, listing, revocation,
+joining the shared editor, recovery downloads and stopping sharing. QR codes
+are generated locally through the optional `qr` method. Invitations contain
+secrets in fragments, never API query parameters. Passcodes are not embedded
+in links, QR codes or email drafts.
+
+The package also exports `mountShared(host, container)`, returning an async
+`unmount()` cleanup. This separate guest presentation uses only the version-one
+interface in `src/sharedHost.ts`: snapshots, exact before/after text changes,
+local undo/redo, composition fences, mapped selections, presence and scoped
+attachment upload/read. It does not receive library enumeration, panel APIs,
+backup configuration or a panel account.
+
+The host owns Yjs synchronization and all authorization. Rich and source
+presentation never turn a remote snapshot into a local save. The host supplies
+mapped cursor offsets after applying remote changes; keyboard and toolbar undo
+both invoke its selective history. Rejected local changes remain downloadable.
+Sharing is online-first: guest reload/offline persistence is not promised.
+While sharing is active, owners use the shared editor rather than ordinary
+full-document saves or offline replay. Stopping sharing is an explicit owner
+action; uncertain writes require recovery before private editing resumes.
+
+PDFs use ordinary canonical Markdown attachment links and explicit download
+cards. Image/audio/PDF uploads retain the host's 20 MB individual limit. Shared
+uploads additionally have a per-incarnation 200 MB / 64-upload budget. A guest
+cannot reference arbitrary files from the rest of the notebook.
+
+## Private document capability
+
 The host exposes libraries, bounded note pages, read, create, save, and delete.
 Only opaque owner-authorized library and item IDs cross the boundary. The host
 resolves paths, providers, server connections, authentication, and credentials.
