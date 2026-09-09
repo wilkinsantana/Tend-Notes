@@ -7,8 +7,11 @@
   type TtsState = Awaited<ReturnType<SpeechTts['getInstallState']>>;
   let {speech, section = 'all', onstatus, onttsstatus, onclose}: {speech: Speech; section?: 'all'|'dictation'|'tts'; onstatus: (status: {installed: boolean; bytes: number}) => void; onttsstatus: (status: TtsState | null) => void; onclose: () => void} = $props();
   const tts = $derived(speech.tts);
-  const voices = $derived(tts?.listVoices() ?? []);
-  let selectedVoice = $state('');
+  let engineRevision = $state(0);
+  const engineControls = $derived(!!tts?.listEngines && !!tts?.getEngine && !!tts?.setEngine);
+  const engines = $derived.by(() => { engineRevision; return tts?.listEngines?.() ?? []; });
+  const voices = $derived.by(() => { engineRevision; return tts?.listVoices() ?? []; });
+  let selectedEngine = $state(''), selectedVoice = $state('');
   let installed = $state(false), bytes = $state(0), received = $state(0), total = $state(0);
   let loading = $state(true), installing = $state(false), removing = $state(false), error = $state('');
   let controller: AbortController | null = null;
@@ -24,8 +27,6 @@
   const chosenVoice = $derived(voices.find(voice => voice.id === selectedVoice));
   const voiceInstalled = $derived(!!selectedVoice && !!ttsState?.installedVoices.includes(selectedVoice));
   const size = (value: number) => value ? `${(value / 1_000_000).toFixed(1)} MB` : 'size unavailable';
-  $effect(() => { if (!selectedVoice) selectedVoice = tts?.getDefaultVoice() || voices[0]?.id || ''; });
-
   async function refresh() {
     loading = true; error = '';
     try { const status = await speech.status(); if (alive) { installed = status.installed; bytes = status.bytes; onstatus(status); } }
@@ -35,9 +36,16 @@
   async function refreshTts() {
     if (!tts) { ttsLoading = false; onttsstatus(null); return; }
     ttsLoading = true; ttsError = '';
-    try { const status = await tts.getInstallState(); if (alive) { ttsState = status; selectedVoice ||= status.defaultVoice || voices[0]?.id || ''; onttsstatus(status); } }
+    try { const status = await tts.getInstallState(); if (alive) { engineRevision++; ttsState = status; selectedEngine = tts.getEngine?.() || ''; selectedVoice ||= status.defaultVoice || tts.listVoices()[0]?.id || ''; onttsstatus(status); } }
     catch (cause) { if (alive) ttsError = cause instanceof Error ? cause.message : 'Read-aloud status is unavailable. Try again.'; }
     finally { if (alive) ttsLoading = false; }
+  }
+  function switchEngine() {
+    if (!tts || !engineControls || allBusy || ttsLoading) return;
+    const current = tts.getEngine!();
+    if (!selectedEngine || selectedEngine === current) return;
+    try { tts.setEngine!(selectedEngine); selectedVoice = ''; ttsState = null; onttsstatus(null); engineRevision++; void refreshTts(); }
+    catch (cause) { selectedEngine = current; ttsError = cause instanceof Error ? cause.message : 'The read-aloud engine could not be changed.'; }
   }
   async function install() {
     if (allBusy) return;
@@ -118,7 +126,7 @@
 </script>
 
 <div class="speech-layer" role="presentation"><div class="speech-dialog" role="dialog" aria-modal="true" aria-label="Device speech settings" tabindex="-1" use:focusDialog>
-  <header><div><h2>{#if section === 'dictation'}<SpeechIcon size={22}/> Dictation{:else if section === 'tts'}<Volume2 size={22}/> Read aloud{:else}<Settings2 size={20}/> Device speech{/if}</h2><p>Audio and text are processed locally. Dictation downloads come from Moonshine AI; read-aloud models and voices come from its Hugging Face mirror; inserted transcripts still use normal Notes save and sync.</p></div><button class="close" aria-label="Close speech settings" onclick={onclose} disabled={allBusy}><X size={19}/></button></header>
+  <header><div><h2>{#if section === 'dictation'}<SpeechIcon size={22}/> Dictation{:else if section === 'tts'}<Volume2 size={22}/> Read aloud{:else}<Settings2 size={20}/> Device speech{/if}</h2><p>Audio and text are processed locally. Models and voices download only when you choose. Inserted transcripts still use normal Notes save and sync.</p></div><button class="close" aria-label="Close speech settings" onclick={onclose} disabled={allBusy}><X size={19}/></button></header>
   {#if section !== 'tts'}<div class="speech-card">
     <div class="card-title"><div><h3>Local dictation</h3><p>Turn speech into a transcript you review before inserting into a note.</p></div>{#if loading}<LoaderCircle class="spin" size={18}/>{:else if installed}<span class="ready"><Check size={15}/> Ready</span>{/if}</div>
     {#if installing}<div class="progress-copy"><span>Downloading dictation…</span><span>{total ? `${percent}% · ${size(received)} of ${size(total)}` : size(received)}</span></div><progress max={total || 1} value={received}></progress><button onclick={cancelInstall}>Cancel download</button>
@@ -129,6 +137,7 @@
   {/if}
   {#if tts && section !== 'dictation'}<div class="speech-card">
     <div class="card-title"><div><h3>Read aloud</h3><p>Listen to readable note text with an American or British English voice.</p></div>{#if ttsLoading}<LoaderCircle class="spin" size={18}/>{:else if ttsState?.model === 'ready'}<span class="ready"><Check size={15}/> Model ready</span>{/if}</div>
+    {#if engineControls}<label for="speech-engine">Engine</label><select id="speech-engine" bind:value={selectedEngine} onchange={switchEngine} disabled={allBusy || ttsLoading}>{#each engines as engine}<option value={engine.id}>{engine.name}</option>{/each}</select><p class="details">{engines.find(engine => engine.id === selectedEngine)?.description}</p>{/if}
     {#if ttsTask === 'model' || ttsTask === 'voice'}<div class="progress-copy"><span>{ttsProgress?.phase ?? 'Preparing'} {ttsTask === 'voice' ? 'voice' : 'read-aloud model'}…</span><span>{ttsProgress?.totalBytes ? `${ttsPercent}% · ${size(ttsProgress.completedBytes)} of ${size(ttsProgress.totalBytes)}` : ''}</span></div><progress max={ttsProgress?.totalBytes || 1} value={ttsProgress?.completedBytes || 0}></progress><button onclick={cancelTtsDownload}>Cancel download</button>
     {:else if !ttsLoading && ttsState?.model !== 'ready'}<p class="details">Downloads the local voice model only when you choose. Voice files are separate so you keep only the voices you use.</p><button class="primary" onclick={() => void installModel()} disabled={allBusy}><Download size={15}/> Download read-aloud model {ttsState?.modelBytes.total ? `· ${size(ttsState.modelBytes.total)}` : ''}</button>
     {:else if ttsState?.model === 'ready'}

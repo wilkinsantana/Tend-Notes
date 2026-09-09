@@ -362,3 +362,18 @@ hosts retain whole-reading replay. Notes clears audio on note changes, speech
 settings, flush and unmount; removed paragraphs are dropped on the next reading.
 Partial, failed and oversized paragraphs are not cached. No synthesized audio
 is written to persistent storage.
+
+
+### Optional reading-engine selection
+
+Hosts may provide `tts.listEngines(): readonly { id, name, description }[]`,
+`tts.getEngine(): string` and `tts.setEngine(id): void`. Notes exposes these in
+Audio settings only when all three are available. Changing engines stops current
+audio, refreshes installation and voice state, and requires an explicit download
+for missing assets. It does not automatically install or delete any engine.
+Voice identifiers are opaque strings scoped to the selected engine; replay keys
+include the selected voice. Older hosts keep their existing voice-only settings.
+The host owns catalog trust, persistence and model/runtime update compatibility.
+
+Audio controls belong together in the second toolbar, with read-aloud available
+in Preview and dictation/voice recording only when editing a writable note.

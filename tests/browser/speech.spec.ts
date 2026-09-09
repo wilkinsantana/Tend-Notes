@@ -95,12 +95,14 @@ test('speech icons are visible before downloads and offer only the selected feat
   await expect(setup.getByRole('button',{name:'Download local dictation'})).toHaveCount(0);
   await setup.getByRole('button',{name:'Close speech settings'}).click();
   await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
+  await page.getByRole('button',{name:'More formatting options',exact:true}).click();
   await expect(dictate).toBeVisible();
   await dictate.click();
   await expect(setup.getByRole('button',{name:'Download local dictation'})).toBeVisible();
   await expect(setup.getByRole('button',{name:/Download read-aloud model/})).toHaveCount(0);
   await setup.getByRole('button',{name:'Close speech settings'}).click();
   await page.getByRole('button',{name:'Rich text writing',exact:true}).click();
+  await page.getByRole('button',{name:'More formatting options',exact:true}).click();
   await expect(dictate).toBeVisible();
   await page.getByRole('button',{name:'Preview',exact:true}).click();
   await expect(dictate).toHaveCount(0);
@@ -149,13 +151,20 @@ test('highlighting a preview paragraph reads only that text',async({page})=>{
   expect(await page.evaluate(()=>(window as any).speechFixtureState.spoken)).toEqual([expected.trim()]);
 });
 
-test('toolbar groups audio separately and preserves labeled groups in mobile overflow',async({page})=>{
+test('formatting toolbar groups audio separately, keeps reading in preview, and preserves labeled groups in mobile overflow',async({page})=>{
   await fixture(page);await page.goto('/');
   await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
   await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const audio=page.getByRole('group',{name:'Audio',exact:true});
   for(const name of ['Dictate text','Read selection or note aloud','Insert audio','Device speech settings']) await expect(audio.getByRole('button',{name,exact:true})).toBeVisible();
+  await expect(page.locator('header').getByRole('group',{name:'Audio',exact:true})).toHaveCount(0);
   await expect(page.getByRole('group',{name:'Text',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  const previewAudio=page.getByRole('group',{name:'Audio',exact:true});
+  await expect(previewAudio.getByRole('button',{name:'Read selection or note aloud',exact:true})).toBeVisible();
+  await expect(previewAudio.getByRole('button',{name:'Dictate text',exact:true})).toHaveCount(0);
+  await expect(previewAudio.getByRole('button',{name:'Insert audio',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   if(process.env.NOTES_TOOLBAR_SCREENSHOT) await page.screenshot({path:process.env.NOTES_TOOLBAR_SCREENSHOT});
   await page.setViewportSize({width:390,height:844});
   await page.getByRole('button',{name:'More formatting options',exact:true}).click();

@@ -67,6 +67,9 @@ export interface SpeechInstallProgress {
 }
 export interface SpeechTts {
   readonly supportsSegments?: boolean;
+  listEngines?(): readonly {id: string; name: string; description: string}[];
+  getEngine?(): string;
+  setEngine?(id: string): void;
   getInstallState(): Promise<{model: 'not-installed' | 'installing' | 'ready' | 'error'; modelBytes: {installed: number; total: number}; installedVoices: string[]; defaultVoice: string; error?: string}>;
   installModel(options?: {signal?: AbortSignal; onProgress?: (progress: SpeechInstallProgress) => void}): Promise<void>;
   removeModel(): Promise<void>;
