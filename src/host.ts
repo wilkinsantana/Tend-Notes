@@ -45,10 +45,59 @@ export interface Documents {
   save(id: string, input: { content: string; revision: string }): Promise<Document>;
   delete(id: string, revision: string): Promise<void>;
 }
+export interface SpeechCapture {
+  stop(): Promise<void>;
+  cancel(): void;
+}
+export interface SpeechVoice {
+  id: string;
+  name: string;
+  locale: 'en-US' | 'en-GB';
+  gender: 'female' | 'male';
+  grade: string;
+  bytes: number;
+  sha256: string;
+}
+export interface SpeechInstallProgress {
+  phase: 'checking' | 'downloading' | 'verifying' | 'caching' | 'complete';
+  item: 'runtime' | 'model' | 'voice';
+  voice?: string;
+  completedBytes: number;
+  totalBytes: number;
+}
+export interface SpeechTts {
+  getInstallState(): Promise<{model: 'not-installed' | 'installing' | 'ready' | 'error'; modelBytes: {installed: number; total: number}; installedVoices: string[]; defaultVoice: string; error?: string}>;
+  installModel(options?: {signal?: AbortSignal; onProgress?: (progress: SpeechInstallProgress) => void}): Promise<void>;
+  removeModel(): Promise<void>;
+  listVoices(): readonly SpeechVoice[];
+  installVoice(id: string, options?: {signal?: AbortSignal; onProgress?: (progress: SpeechInstallProgress) => void}): Promise<void>;
+  removeVoice(id: string): Promise<void>;
+  getDefaultVoice(): string;
+  setDefaultVoice(id: string): void;
+  previewVoice(id: string, options: {signal?: AbortSignal; onProgress?: (progress: {phase: 'loading' | 'synthesizing'; completed: number; total: number}) => void; onChunk: (chunk: {index: number; pcm: ArrayBuffer; sampleRate: 24000; sampleCount: number}) => Promise<void> | void}): Promise<{sampleRate: 24000; chunks: number; sampleCount: number}>;
+  synthesize(options: {text: string; voice?: string; speed?: number; signal?: AbortSignal; onProgress?: (progress: {phase: 'loading' | 'synthesizing'; completed: number; total: number}) => void; onChunk: (chunk: {index: number; pcm: ArrayBuffer; sampleRate: 24000; sampleCount: number}) => Promise<void> | void}): Promise<{sampleRate: 24000; chunks: number; sampleCount: number}>;
+  cancel(): void;
+  dispose(): void;
+}
+export interface Speech {
+  version: 1;
+  tts?: SpeechTts;
+  status(): Promise<{installed: boolean; bytes: number}>;
+  install(onProgress: (received: number, total: number) => void, signal?: AbortSignal): Promise<void>;
+  remove(): Promise<void>;
+  start(callbacks: {
+    onPartial(text: string): void;
+    onFinal(text: string): void;
+    onError(message: string): void;
+    signal?: AbortSignal;
+  }): Promise<SpeechCapture>;
+  dispose(): void;
+}
 export interface Host {
   id: string;
   user: { id: string; name: string; role: string } | null;
   documents?: Documents;
+  speech?: Speech;
   onUnmount(fn: () => void | Promise<void>): void;
 }
 

@@ -49,4 +49,7 @@ const host: Host = { id:'host.tend.notes',user:{id:'demo-user',name:'You',role:'
 }};
 if (new URLSearchParams(location.search).has('trash')) host.documents!.trash = demoTrash(get, put, state);
 if (new URLSearchParams(location.search).has('future-trash') && host.documents?.trash) Object.assign(host.documents.trash, {version: 2});
+// Only this development entry accepts a browser acceptance fixture.
+const speechFixture = (window as unknown as {notesSpeechFixture?: Host['speech']}).notesSpeechFixture;
+if (speechFixture) host.speech = speechFixture;
 activate(host).mount(document.querySelector('#app')!);

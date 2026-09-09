@@ -233,3 +233,17 @@ this release. Account-authenticated Notes-only entry and existing-note offline
 sync remain separate host capabilities. Physical Android/iPhone acceptance and
 installed-release verification remain open; local and emulated tests do not
 close them. Broader TendDrop live exchange is not required for durable uploads.
+
+
+## 0.9 — Optional device speech
+
+- [x] Optional versioned host speech capability; no models inside the extension.
+- [x] Local dictation download/settings and review-before-insert capture.
+- [x] Guarded transcript insertion with one-step Undo and stale-note refusal.
+- [x] Read-aloud extraction, bounded playback, pause/resume/stop and voice settings.
+- [x] Browser UI tests for opt-in capture, insertion/Undo and mobile voice settings.
+- [ ] Final Kokoro runtime acceptance and Gitea-verified publication.
+- [ ] Physical Android/iPhone microphone, audio interruption and storage pressure.
+
+See [the speech milestone](docs/local-speech-milestone.md). Core and Notes
+updates must both be installed manually before device speech is available.

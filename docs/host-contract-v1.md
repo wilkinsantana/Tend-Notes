@@ -295,3 +295,54 @@ container. A same-page host header may dispatch `tend-notes:new-note` directly
 on that container to open the normal creation dialog. The listener is removed
 on unmount. This is a UI action only; document creation still uses the existing
 authorized Documents capability. Older packages simply lack this affordance.
+
+## Optional device speech capability
+
+`host.speech` is optional and versioned independently (`version: 1`). Older
+hosts omit it and Notes keeps ordinary writing available. The host supplies a
+fixed, reviewed local runtime and model catalog; the extension cannot supply
+worker URLs, model URLs, executable code, or a general network request.
+
+- `status()` returns `{ installed, bytes }` for the device's dictation assets.
+- `install(onProgress, signal?)` explicitly downloads the fixed catalog;
+  progress receives downloaded and total bytes. Cancellation must not report a
+  partial installation as ready.
+- `remove()` deletes speech assets only, refusing while speech is busy. It
+  never touches notes, drafts, pending synchronization, or recovery copies.
+- `start({ onPartial, onFinal, onError, signal? })` requires installed assets and returns
+  `{ stop, cancel }`. Partial text replaces the current interim segment;
+  final callbacks contain each newly completed segment exactly once. The
+  optional abort signal also cancels startup before the session handle exists.
+- `stop()` drains and finalizes capture; `cancel()` immediately stops capture
+  and suppresses late callbacks. `dispose()` cancels work on host unmount.
+
+Microphone capture requires explicit user action and browser permission.
+Notes keeps transcripts outside the document until an explicit insertion
+through its normal edit and undo path. Target note identity, write authority,
+content and selection must still match; refusal preserves the transcript.
+Local inference does not change ordinary server saving or synchronization.
+Model storage is shared public device data, separate from account-scoped note
+storage, and can be evicted by the browser. Runtime and model availability must
+both be verified before claiming offline support.
+
+### Optional read-aloud
+
+`host.speech.tts` is independently optional. `getInstallState()` returns model
+readiness, installed/total bytes, installed voice IDs and the default voice.
+`listVoices()` returns a fixed catalog with display names, locales and download
+sizes. `installModel(options?)` and `installVoice(id, options?)` accept an abort
+signal and byte progress; their corresponding removal methods touch speech
+assets only. `setDefaultVoice(id)` sets a device preference.
+
+`synthesize({text, voice?, speed?, signal?, onProgress?, onChunk})` processes a
+bounded text snapshot. `previewVoice(id, options)` uses a fixed preview phrase.
+Each audio chunk carries `{index, pcm, sampleRate:24000, sampleCount}`; `pcm` is
+transferred Float32 PCM, not a remotely hosted audio URL. The host waits for the
+promise returned by `onChunk` before producing another chunk. Notes awaits local
+playback completion, so pausing cannot accumulate unbounded synthesized audio.
+`cancel()` and `dispose()` release synthesis; Notes separately stops its audio
+context. Microphone capture and read-aloud are mutually exclusive in the UI.
+
+This interface is not proof that a host has shipped every runtime or voice.
+Absent capabilities remain hidden, and unavailable downloads must fail visibly
+without a cloud speech fallback.

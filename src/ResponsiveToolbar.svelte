@@ -4,7 +4,7 @@
   let { tools }: { tools: Snippet[] } = $props();
   let root: HTMLDivElement;
   let measure: HTMLDivElement;
-  let trigger: HTMLButtonElement;
+  let trigger = $state<HTMLButtonElement>();
   let count = $state(0);
   let open = $state(false);
   function layout() {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type, Share2 } from 'lucide-svelte';
-  import type { Host, Library, Note, Document, Documents } from './host';
+  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type, Share2, Settings2, Speech as SpeechIcon, Volume2 } from 'lucide-svelte';
+  import type { Host, Library, Note, Document, Documents, SpeechTts } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import ResponsiveToolbar from './ResponsiveToolbar.svelte';
   import Preview from './Preview.svelte';
@@ -24,12 +24,18 @@
   import { dailyNote } from './daily';
   import MediaDialog from './MediaDialog.svelte';
   import ShareDialog from './ShareDialog.svelte';
+  import SpeechSettingsDialog from './SpeechSettingsDialog.svelte';
+  import DictationDialog from './DictationDialog.svelte';
+  import ReadAloudControls from './ReadAloudControls.svelte';
   import { editMarkdown } from './formatting';
   import { markdownNewline, type MarkdownNewline } from './keyboard';
   import { EditorHistory, type EditorSelection } from './editorHistory';
   import { noteOutline, type OutlineHeading } from './outline';
   import BackupPanel from './BackupPanel.svelte';
   import { unpack, withBody, withOrganization, normalizeTag, COLORS, type Organization } from './organization';
+  import { DictationController, prepareDictationInsertion, type DictationState, type DictationTarget } from './dictation';
+  import { markdownToSpeech } from './speechText';
+  import { createSpeechPlayback } from './speechPlayback';
   let { host }: { host: Host } = $props();
   let backlinksOpen = $state(false);
   let linkDialog = $state<{id:string;body:string}|null>(null);
@@ -189,6 +195,22 @@
   let organizeOpen = $state(false);
   let tagInput = $state('');
   let backupOpen = $state(false);
+  let speechSettingsOpen = $state(false);
+  let speechInstalled = $state(false);
+  let dictationOpen = $state(false);
+  let dictationController = $state.raw<DictationController | null>(null);
+  let dictationState = $state<DictationState>({phase:'idle',target:null,finalSegments:[],partial:'',transcript:'',error:''});
+  type TtsInstallState = Awaited<ReturnType<SpeechTts['getInstallState']>>;
+  let ttsState = $state<TtsInstallState | null>(null);
+  let readPhase = $state<'idle'|'starting'|'playing'|'paused'>('idle');
+  let readProgress = $state({completed: 0, total: 0});
+  let readError = $state('');
+  let readScope = $state('This note');
+  let readTargetId = '';
+  let readTargetBody = '';
+  let readSequence = 0;
+  let readController: AbortController | null = null;
+  let readPlayback: ReturnType<typeof createSpeechPlayback> | null = null;
   let nextOffset = $state<number | null>(null);
   let loading = $state(true);
   let listLoading = $state(false);
@@ -330,9 +352,12 @@
   let sequence = 0;
   let searchTimer: ReturnType<typeof setTimeout>;
   const ready = $derived(host.documents?.version === 1 && !!host.user);
+  const speechAvailable = $derived(host.speech?.version === 1);
+  const readAloudReady = $derived(ttsState?.model === 'ready' && ttsState.installedVoices.length > 0);
+  const dictationActive = $derived(['starting', 'recording', 'stopping'].includes(dictationState.phase));
   const trashSupported = $derived(host.documents?.trash?.version === 1);
   const deletionUncertain = $derived(deletePending && deleteRequest?.documentId === view?.document.id);
-  const historyBlocked = $derived(opening || creating || deleting || actionBusy || !!deletionUncertain || !!mediaKind || !!formulaSelection || !!linkDialog || shareFrozen);
+  const historyBlocked = $derived(opening || creating || deleting || actionBusy || !!deletionUncertain || !!mediaKind || !!formulaSelection || !!linkDialog || dictationOpen || speechSettingsOpen || shareFrozen);
   const selectedLibrary = $derived(libraries.find(l => l.id === libraryId));
   const parsed = $derived(unpack(view?.content ?? ''));
   const editorBody = $derived(parsed.body.replace(/\r\n?/g, '\n'));
@@ -353,6 +378,141 @@
       .trim();
     return plain && plain.length <= 220 ? plain : '';
   }
+
+  function setSpeechStatus(status: {installed: boolean; bytes: number}) {
+    speechInstalled = status.installed;
+  }
+  function setTtsStatus(status: TtsInstallState | null) { ttsState = status; }
+  function openSpeechSettings() { stopReadAloud(); speechSettingsOpen = true; }
+  async function refreshSpeechStatus() {
+    const speech = host.speech;
+    if (speech?.version !== 1) return;
+    try {
+      const status = await speech.status();
+      if (alive && host.speech === speech) setSpeechStatus(status);
+    } catch { /* Device speech settings exposes a retry without interrupting Notes. */ }
+    try {
+      const status = await speech.tts?.getInstallState();
+      if (status && alive && host.speech === speech) setTtsStatus(status);
+    } catch { /* Read-aloud setup remains available through device speech settings. */ }
+  }
+  function currentDictationTarget(): DictationTarget | null {
+    if (!view || !editor) return null;
+    return {
+      noteId: view.document.id,
+      noteName: view.document.name,
+      content: view.content,
+      body: editorBody,
+      selection: {start: editor.selectionStart, end: editor.selectionEnd},
+      canWrite: view.document.canWrite ?? selectedLibrary?.canCreate ?? false,
+      conflict: view.conflict,
+    };
+  }
+  function prepareCurrentDictation() {
+    const target = currentDictationTarget();
+    if (target) dictationController?.prepare(target);
+    return !!target;
+  }
+  function openDictation() {
+    if (!speechAvailable) return;
+    if (!speechInstalled) { openSpeechSettings(); return; }
+    if (!dictationState.transcript && !dictationController?.active && !prepareCurrentDictation()) return;
+    dictationOpen = true;
+  }
+  function startDictation() {
+    stopReadAloud();
+    return dictationController?.start();
+  }
+  function closeDictation() {
+    if (dictationController?.active) dictationController.cancel();
+    dictationOpen = false;
+  }
+  function clearDictation() {
+    if (!dictationController?.clear()) return;
+    prepareCurrentDictation();
+  }
+  function insertDictation() {
+    if (!view || !session || !editorHistory || !dictationController) return;
+    try {
+      const result = prepareDictationInsertion(dictationController.state, {
+        noteId: view.document.id,
+        content: view.content,
+        body: editorBody,
+        canWrite: view.document.canWrite ?? selectedLibrary?.canCreate ?? false,
+        conflict: view.conflict,
+        blocked: opening || creating || deleting || actionBusy || !!deletionUncertain || !!mediaKind || !!formulaSelection || !!linkDialog || shareFrozen,
+        withBody: body => withBody(view!.content, body),
+      });
+      if (!commitEditorBody(result.body, result.before, result.after)) throw new Error('The note changed before the transcript could be inserted. It is still available here.');
+      dictationController.clear();
+      dictationOpen = false;
+      void tick().then(() => { editor?.focus(); editor?.setSelectionRange(result.after.start, result.after.end); });
+    } catch (cause) { dictationController.report(message(cause)); }
+  }
+
+  function stopReadAloud(nextError = '') {
+    readSequence += 1;
+    readController?.abort();
+    readController = null;
+    host.speech?.tts?.cancel();
+    readPlayback?.stop();
+    readPlayback = null;
+    readPhase = 'idle';
+    readTargetId = '';
+    readTargetBody = '';
+    readProgress = {completed: 0, total: 0};
+    if (nextError) readError = nextError;
+  }
+  async function startReadAloud() {
+    const tts = host.speech?.tts;
+    if (!tts || !readAloudReady) { openSpeechSettings(); return; }
+    if (!view || dictationController?.active || readPhase !== 'idle') return;
+    const targetId = view.document.id;
+    let source = editorBody;
+    let scope = 'This note';
+    if (mode !== 'preview' && editor && editor.selectionStart !== editor.selectionEnd) {
+      source = editorBody.slice(editor.selectionStart, editor.selectionEnd);
+      scope = 'Selected text';
+    }
+    const text = markdownToSpeech(source);
+    if (!text) { readError = 'There is no readable text in this selection.'; return; }
+    stopReadAloud();
+    dictationController?.cancel();
+    const ticket = ++readSequence;
+    const request = new AbortController();
+    let playback: ReturnType<typeof createSpeechPlayback>;
+    try {
+      playback = createSpeechPlayback(state => {
+        if (ticket !== readSequence) return;
+        if (state === 'playing') readPhase = 'playing';
+        else if (state === 'paused') readPhase = 'paused';
+      });
+    } catch (cause) { readError = message(cause); return; }
+    readController = request; readPlayback = playback; readTargetId = targetId; readTargetBody = editorBody; readScope = scope; readPhase = 'starting'; readError = ''; readProgress = {completed: 0, total: 0};
+    try {
+      await playback.ready;
+      await tts.synthesize({text, signal: request.signal, onProgress: progress => { if (ticket === readSequence) readProgress = {completed: progress.completed, total: progress.total}; }, onChunk: chunk => playback.play(chunk)});
+      if (ticket === readSequence) stopReadAloud();
+    } catch (cause) {
+      if (ticket === readSequence && !request.signal.aborted) stopReadAloud(message(cause));
+    } finally {
+      if (ticket === readSequence) { readController = null; readPlayback?.stop(); readPlayback = null; readPhase = 'idle'; readTargetId = ''; readTargetBody = ''; }
+    }
+  }
+  async function pauseReadAloud() {
+    if (readPhase !== 'playing') return;
+    try { await readPlayback?.pause(); } catch (cause) { stopReadAloud(message(cause)); }
+  }
+  async function resumeReadAloud() {
+    if (readPhase !== 'paused') return;
+    try { await readPlayback?.resume(); } catch (cause) { stopReadAloud(message(cause)); }
+  }
+
+  $effect(() => {
+    const noteId = view?.document.id ?? null;
+    dictationController?.noteChanged(noteId);
+    if (readTargetId && (readTargetId !== noteId || readTargetBody !== editorBody)) stopReadAloud('Read-aloud stopped because the note changed.');
+  });
 
   function refreshDrafts() { try { recoveries = drafts.list(); } catch { /* Editing still works with explicit recovery warnings. */ } }
   async function loadList(append = false) {
@@ -383,7 +543,7 @@
     finally { indexing = false; if (alive && libraryId && libraryId !== id) void buildSearch(libraryId); }
   }
   async function refresh() {
-    if (trashOpen || todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind || formulaSelection || linkDialog) return;
+    if (trashOpen || todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind || formulaSelection || linkDialog || dictationOpen || speechSettingsOpen) return;
     syncing = true;
     try {
       if (notes.length <= 100) await loadList();
@@ -964,7 +1124,7 @@
   }
   function shortcuts(event: KeyboardEvent) {
     if (event.defaultPrevented || event.isComposing || !(event.ctrlKey || event.metaKey)) return;
-    if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind || formulaSelection || linkDialog) return;
+    if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind || formulaSelection || linkDialog || dictationOpen || speechSettingsOpen) return;
     if (event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); void quickCapture(); }
     if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
     if (event.target !== sourceEditor && !writingSurface?.contains(event.target)) return;
@@ -993,8 +1153,13 @@
     const a = (event.target as Element).closest('a');
     if (a) { event.preventDefault(); if (/^(https:\/\/|mailto:)/i.test(a.href)) window.open(a.href, '_blank', 'noopener,noreferrer'); }
   }
-  export async function flush() { await session?.dispose(); }
+  export async function flush() { stopReadAloud(); dictationController?.cancel(); await session?.dispose(); }
   onMount(() => {
+    if (host.speech?.version === 1) {
+      const speech = host.speech;
+      dictationController = new DictationController(speech, state => { if (alive) dictationState = state; });
+      void refreshSpeechStatus();
+    }
     if (!ready) { loading = false; return; }
     const client = crypto.randomUUID();
     let storage: Storage;
@@ -1009,7 +1174,7 @@
     refreshTimer = setInterval(() => void refresh(), 3000);
     window.addEventListener('beforeunload', leave);
   });
-  onDestroy(() => { alive = false; taskWorkspace?.cancel(); clearInterval(refreshTimer); clearTimeout(searchTimer); session?.abandon(); window.removeEventListener('beforeunload', leave); });
+  onDestroy(() => { stopReadAloud(); host.speech?.tts?.dispose(); alive = false; dictationController?.dispose(); taskWorkspace?.cancel(); clearInterval(refreshTimer); clearTimeout(searchTimer); session?.abandon(); window.removeEventListener('beforeunload', leave); });
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1020,13 +1185,14 @@
   {:else if loading}
     <div class="welcome" role="status"><LoaderCircle class="spin"/><p>Opening your notebooks…</p></div>
   {:else}
-    <aside inert={templatesOpen || todoOpen || !!formulaSelection}>
+    <aside inert={templatesOpen || todoOpen || !!formulaSelection || dictationOpen || speechSettingsOpen}>
       <div class="brand"><span class="brand-icon"><BookOpen size={20}/></span><div><strong>TEND Notes</strong><small>A little space to think.</small></div></div>
       <div class="library-picker">
         <label class="sr-only" for="notes-library">Notebook</label>
         <select id="notes-library" value={libraryId} onchange={selectLibrary} disabled={!libraries.length || opening}>{#each libraries as library}<option value={library.id}>{library.name}</option>{/each}</select>
         <button class="icon" class:chosen={searchOpen} bind:this={searchTrigger} aria-label="Search notes" title="Search notes" aria-expanded={searchOpen} aria-controls="notes-search" onclick={() => void toggleSearch()}><Search size={16}/></button>
         <button class="icon" aria-label="Rename notebook" title="Rename notebook" disabled={!selectedLibrary || actionBusy} onclick={() => beginRename()}><TextCursorInput size={15}/></button>
+        {#if speechAvailable}<button class="icon" aria-label="Device speech settings" title="Device speech settings" aria-expanded={speechSettingsOpen} onclick={openSpeechSettings}><Settings2 size={15}/></button>{/if}
       </div>
       {#if searchOpen}<div class="search" id="notes-search"><Search size={14}/><input bind:this={searchInput} aria-label="Search your notes" placeholder="Search your notes" bind:value={query} oninput={search} onkeydown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void toggleSearch(); } }}/><button class="icon" aria-label="Close search" title="Close search" onclick={() => void toggleSearch()}><X size={14}/></button></div>{/if}
       <div class="capture-actions" aria-label="Notebook actions">
@@ -1072,7 +1238,7 @@
       </div>
       <div class="sidebar-footer">{#if indexing}<small role="status">Preparing full-text search…</small>{/if}{#if indexError}<small role="status">{indexError}</small>{/if}<div class="footer-tools"><small>Markdown. Yours to keep.</small><button class="icon" aria-label="Import Markdown" title="Import Markdown" onclick={() => filePicker?.click()} disabled={!selectedLibrary?.canCreate}><Upload size={15}/></button><button class="icon" aria-label="Export & backups" title="Export & backups" onclick={() => backupOpen = true}><Download size={15}/></button></div></div>
     </aside>
-    <main inert={templatesOpen || !!formulaSelection}>
+    <main inert={templatesOpen || !!formulaSelection || dictationOpen || speechSettingsOpen}>
       {#if trashOpen && host.documents?.trash}
         <TrashPanel api={host.documents.trash} onclose={() => void closeTrash()} onchange={() => void loadList()}/>
       {:else if todoOpen}
@@ -1112,14 +1278,18 @@
 {#snippet removeColumn()}<button class="icon" title="Remove table column" aria-label="Remove table column" onclick={() => writingSurface?.table('delete-column')}><Trash2 size={16}/></button>{/snippet}
 {#snippet tool19()}<button class="icon" title="Audio · upload or record" aria-label="Insert audio" onclick={() => openMedia('audio')}><Mic size={17}/></button>{/snippet}
 {#snippet tool20()}<button class="icon" title="PDF · upload attachment" aria-label="Attach PDF" onclick={() => openMedia('document')}><FileText size={17}/></button>{/snippet}
-        {#if mode !== 'preview'}<div class="formatting"><ResponsiveToolbar tools={[tool0,tool1,tool2,tool3,tool4,tool5,tool6,tool7,tool8,tool9,tool10,tool11,tool12,tool13,tool14,tool15,tool16,tool17,tool18,tool19,tool20,...(formattedWriting ? [tableRow,tableColumn,removeRow,removeColumn] : [])]}/></div>{/if}
+{#snippet dictateTool()}<button class="icon" class:dictating={dictationActive} title="Dictate text · review before inserting" aria-label="Dictate text" aria-expanded={dictationOpen} onclick={openDictation}><SpeechIcon size={18}/></button>{/snippet}
+{#snippet readAloudTool()}<button class="icon" class:dictating={readPhase !== 'idle'} title="Read selection or note aloud" aria-label="Read selection or note aloud" onclick={() => void startReadAloud()} disabled={readPhase !== 'idle' || dictationActive}><Volume2 size={18}/></button>{/snippet}
+{#snippet speechSettingsTool()}<button class="icon" title="Device speech settings" aria-label="Device speech settings" aria-expanded={speechSettingsOpen} onclick={openSpeechSettings}><Settings2 size={17}/></button>{/snippet}
+        {#if mode !== 'preview'}<div class="formatting"><ResponsiveToolbar tools={[tool0,tool1,tool2,tool3,tool4,tool5,tool6,tool7,tool8,tool9,tool10,tool11,tool12,tool13,tool14,tool15,tool16,tool17,tool18,tool19,tool20,...(speechInstalled ? [dictateTool] : []),...(readAloudReady ? [readAloudTool] : []),...(speechAvailable ? [speechSettingsTool] : []),...(formattedWriting ? [tableRow,tableColumn,removeRow,removeColumn] : [])]}/></div>{/if}
         {#if findOpen && mode !== 'preview'}<EditorFind bind:this={findPanel} body={editorBody} onmatches={(matches, activeStart) => { findMatches = matches; findActiveStart = activeStart; }} initialQuery={findInitialQuery} initialStart={findInitialStart} onselect={match => void revealSelection(match.start, match.end)} onclose={closeFind}/>{/if}
         {#if backlinksOpen && host.documents}{#key view.document.id}<BacklinksPanel documents={host.documents} currentNoteId={view.document.id} onopen={note => { backlinksOpen=false; void open(note); }} onclose={() => backlinksOpen=false}/>{/key}{/if}
         <div class="writing" class:split={mode === 'split'} class:preview-only={mode === 'preview'}>
-          {#if mode !== 'preview'}{#if formattedWriting && Surface}{#key view.document.id}<WritingEditor {Surface} body={editorBody} readOnly={historyBlocked} matches={findOpen ? findMatches : []} activeStart={findActiveStart} bind:surface={writingSurface} onchange={change => commitEditorBody(change.body, change.before, change.after, change.key)} onundo={() => applyHistory('undo')} onredo={() => applyHistory('redo')}/>{/key}{:else}<textarea class="editor" bind:this={sourceEditor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} oncompositionstart={() => { compositionKey = `composition:${++compositionSequence}`; }} oncompositionend={() => { compositionKey = null; pendingInput = null; }} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind || shareFrozen} value={parsed.body} oninput={editorInput} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}{/if}
+          {#if mode !== 'preview'}{#if formattedWriting && Surface}{#key view.document.id}<WritingEditor {Surface} body={editorBody} readOnly={historyBlocked} matches={findOpen ? findMatches : []} activeStart={findActiveStart} bind:surface={writingSurface} onchange={change => commitEditorBody(change.body, change.before, change.after, change.key)} onundo={() => applyHistory('undo')} onredo={() => applyHistory('redo')}/>{/key}{:else}<textarea class="editor" bind:this={sourceEditor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} oncompositionstart={() => { compositionKey = `composition:${++compositionSequence}`; }} oncompositionend={() => { compositionKey = null; pendingInput = null; }} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind || dictationOpen || speechSettingsOpen || shareFrozen} value={parsed.body} oninput={editorInput} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}{/if}
           {#if findOpen && mode !== 'preview' && !formattedWriting && sourceEditor}<FindHighlights editor={sourceEditor} body={editorBody} matches={findMatches} activeStart={findActiveStart}/>{/if}
-          {#if mode !== 'edit'}<!-- svelte-ignore a11y_click_events_have_key_events --><!-- svelte-ignore a11y_no_static_element_interactions --><div class="preview"><Preview onnotelink={id => void openLinkedNote(id)} content={parsed.body} documents={host.documents!} noteId={view.document.id}/></div>{/if}
+          {#if mode !== 'edit'}<!-- svelte-ignore a11y_click_events_have_key_events --><!-- svelte-ignore a11y_no_static_element_interactions --><div class="preview">{#if readAloudReady}<button class="read-aloud" aria-label="Read this note aloud" title="Read this note aloud" onclick={() => void startReadAloud()} disabled={readPhase !== 'idle' || dictationActive}><Volume2 size={16}/> Read aloud</button>{/if}<Preview onnotelink={id => void openLinkedNote(id)} content={parsed.body} documents={host.documents!} noteId={view.document.id}/></div>{/if}
         </div>
+        {#if readPhase !== 'idle' || readError}<ReadAloudControls phase={readPhase} scope={readScope} progress={readProgress} error={readError} onpause={pauseReadAloud} onresume={resumeReadAloud} onstop={() => { readError = ''; stopReadAloud(); }}/>{/if}
         <footer><span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span><button class="save-status" onclick={() => void save()} disabled={view.saving || !view.dirty || view.conflict}>{#if view.saving}<LoaderCircle size={13} class="spin"/> Saving…{:else if view.dirty}<span class="unsaved-dot"></span>{view.error ? 'Not saved' : 'Save now'}{:else}<Check size={14}/> All changes saved{/if}</button></footer>
       {:else}
         <div class="welcome"><span class="welcome-icon"><BookOpen size={37} strokeWidth={1.4}/></span><span class="eyebrow">YOUR OWN QUIET CORNER</span>{#if !libraries.length}<h1>Make room for an idea.</h1><p>Tend prepares a protected home for your notes on your server. Start writing, then choose a backup destination whenever you’re ready.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}><FolderOpen size={17}/> Set up your notebook</button>{:else if hasLoadedNotes}<h1>Pick up where you left off.</h1><p>Return to a recent note, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => void continueWriting()}><PenLine size={17}/> Continue writing</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if facets.total > 0}<h1>No notes match these filters.</h1><p>Clear the filters to continue writing, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => { query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; void loadList(); }}>Clear filters</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if !selectedLibrary?.canCreate}<h1>Make room for an idea.</h1><p>Choose a connected notebook or let Tend prepare a new one to start writing.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}>Set up your notebook</button>{:else}<h1>Make room for an idea.</h1><p>A quick thought. A plan taking shape. Something worth remembering.<br/>Keep it here, in your own words.</p><button class="primary" onclick={() => beginCreate()}><Plus size={17}/> Write your first note</button><button class="quiet" onclick={() => filePicker?.click()}><Upload size={14}/> Bring a Markdown file</button>{/if}<small>Simple to write. Easy to take with you.</small></div>
@@ -1147,6 +1317,8 @@
     refreshKey={templateRefresh}
   />{/if}
   {#if backupOpen}<BackupPanel api={host.documents?.backups} {libraryId} libraryName={selectedLibrary?.name ?? "Current notebook"} beforeAction={ensureSaved} close={() => backupOpen = false}/>{/if}
+  {#if speechSettingsOpen && host.speech?.version === 1}<SpeechSettingsDialog speech={host.speech} onstatus={setSpeechStatus} onttsstatus={setTtsStatus} onclose={() => speechSettingsOpen = false}/>{/if}
+  {#if dictationOpen}<DictationDialog value={dictationState} onstart={startDictation} onstop={() => dictationController?.stop()} oncancel={() => dictationController?.cancel()} oninsert={insertDictation} onclear={clearDictation} onclose={closeDictation}/>{/if}
   {#if createOpen || deleteOpen || reloadOpen || renameOpen}
     <div class="notes-dialog-layer" role="presentation"><div class="notes-dialog" use:focusDialog role="dialog" aria-modal="true" aria-label={renameOpen ? 'Rename ' + renameOpen : createOpen ? 'New note' : deleteOpen ? 'Delete note' : 'Reload saved version'} tabindex="-1" onkeydown={modalKey}>
       <button class="icon close" aria-label="Close dialog" onclick={() => { createOpen = false; deleteOpen = false; reloadOpen = false; renameOpen = null; }} disabled={creating || deleting || actionBusy}><X size={18}/></button>
@@ -1168,6 +1340,8 @@
   .editor::selection{background:#2563eb;color:#fff}
   .notes-app{--paper:var(--color-base-100,#151b19);--ink:var(--color-base-content,#d8e3df);--wash:var(--color-base-200,#1d2622);--line:color-mix(in srgb,var(--ink) 10%,transparent);--soft:color-mix(in srgb,var(--ink) 54%,transparent);--accent:var(--color-primary,#66b798);--accent-ink:var(--color-primary-content,#071a13);--warning:var(--color-warning,#d7ac64);--danger:var(--color-error,#dc7777);--danger-ink:var(--color-error-content,#250c0c);height:100%;min-height:360px;display:grid;grid-template-columns:236px minmax(0,1fr);color:var(--ink);background:color-mix(in srgb,var(--paper) var(--tend-panel-surface-alpha,100%),transparent);font:14px/1.5 var(--font-sans,system-ui,sans-serif);position:relative;container-type:inline-size;overflow:hidden;text-align:left}
   .notes-app :global(*){box-sizing:border-box}.notes-app :global(button),.notes-app :global(input),.notes-app :global(select),.notes-app :global(textarea){font:inherit}.notes-app :global(button){cursor:pointer}.notes-app :global(button:disabled){opacity:.45;cursor:default}.notes-app :global(button:focus-visible),.notes-app :global(input:focus-visible),.notes-app :global(select:focus-visible),.notes-app :global(a:focus-visible){outline:2px solid var(--accent);outline-offset:3px}.notes-app :global(button){color:inherit}.notes-app :global(h1),.notes-app :global(h2),.notes-app :global(p){margin:0}
+  .dictating{color:var(--danger)!important;background:color-mix(in srgb,var(--danger) 10%,transparent)!important}
+  .read-aloud{float:right;display:inline-flex;align-items:center;gap:6px;margin:0 0 10px 14px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--wash);color:var(--soft);font-size:10px}.read-aloud:hover{color:var(--ink)}
   aside{background:color-mix(in srgb,color-mix(in srgb,var(--wash) 70%,var(--paper)) var(--tend-panel-surface-alpha,100%),transparent);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;padding:28px 16px 18px;overflow:auto}.brand{display:flex;align-items:center;gap:11px;margin:0 8px 28px}.brand-icon{display:grid;place-items:center;width:38px;height:42px;border-radius:12px;background:var(--accent);color:var(--accent-ink)}.brand strong{display:block;font-size:16px;letter-spacing:-.4px}.brand small{display:block;color:var(--soft);font-size:10px;margin-top:2px}.library-picker{padding:0 8px;margin-bottom:16px}.library-picker label,.list-heading{font-size:10px;font-weight:600;letter-spacing:1.3px;color:var(--soft)}select option{background:var(--wash);color:var(--ink)}select{width:100%;border:0;background:transparent;color:var(--ink);margin-top:5px;padding:2px 0}.primary,.danger{display:inline-flex;justify-content:center;align-items:center;gap:9px;border:0;border-radius:9px;background:var(--accent);color:var(--accent-ink)!important;padding:10px 16px;font-weight:550;text-decoration:none;font-size:13px;box-shadow:0 2px 3px #00000008}.new-note{width:100%;justify-content:flex-start}.search{display:flex;align-items:center;gap:9px;color:var(--soft);padding:10px 8px;margin-top:14px}.search input{background:none;border:0;outline:0!important;width:100%;font-size:12px;color:var(--ink)}.search input::placeholder{color:var(--soft)}.list-heading{display:flex;align-items:center;justify-content:space-between;margin:17px 8px 8px}.note-list{overflow:auto;flex:1;min-height:84px}.note{display:flex;align-items:center;gap:10px;padding:12px;width:100%;border:1px solid transparent;background:none;border-radius:9px;text-align:left;margin-bottom:4px}.note>span{min-width:0}.note strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:550}.note small{display:block;font-size:10px;color:var(--soft);margin-top:3px}.note> :global(svg){flex-shrink:0;color:var(--soft)}.note.selected{background:var(--paper);border-color:var(--line);box-shadow:0 2px 6px #00000004}.note.selected> :global(svg){color:var(--accent)}.note:hover{background:color-mix(in srgb,var(--paper) 70%,transparent)}.sidebar-footer{padding-top:18px;border-top:1px solid var(--line);margin-top:20px}.sidebar-footer>small{font-size:10px;color:var(--soft);display:block;padding-left:8px;margin-top:8px}.quiet{display:inline-flex;gap:8px;align-items:center;border:0;background:transparent;padding:7px 8px;border-radius:6px;font-size:12px}.quiet:hover,.icon:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}.list-empty{padding:25px 12px;color:var(--soft);font-size:11px;text-align:center}.list-empty :global(svg){margin:auto auto 10px}.more{width:100%;justify-content:center}.hidden{display:none}
   main{min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}header{height:60px;display:flex;align-items:center;gap:14px;padding:0 24px;border-bottom:1px solid var(--line);flex-shrink:0}.icon{width:30px;height:30px;border:0;display:inline-flex;align-items:center;justify-content:center;background:none;border-radius:6px;flex-shrink:0}.breadcrumb{font-size:11px;color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.suggest-title{display:inline-flex;align-items:center;gap:5px;border:0;border-radius:6px;background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent);padding:5px 8px;font-size:10px;white-space:nowrap}.view-modes{display:flex;gap:2px;margin-left:auto;padding:3px;background:var(--wash);border-radius:8px}.view-modes .active{background:var(--paper);box-shadow:0 1px 3px #0000000a}.welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:35px 28px;gap:17px;overflow:auto}.welcome-icon{width:76px;height:82px;display:grid;place-items:center;border-radius:22px;background:color-mix(in srgb,var(--accent) 8%,var(--paper));color:var(--accent);margin-bottom:10px;transform:rotate(-5deg)}.welcome h1{font-size:clamp(24px,3cqw,34px);font-weight:500;letter-spacing:-1px}.welcome p{max-width:420px;font-size:13px;line-height:1.85;color:var(--soft)}.welcome>small{font-size:10px;color:var(--soft);margin-top:20px}.welcome .quiet{margin-top:-10px;color:var(--soft)}.eyebrow{font-size:9px;letter-spacing:1.8px;font-weight:600;color:var(--soft)}.welcome .primary{margin-top:8px}.document-actions{display:flex;gap:4px;color:var(--soft)}.formatting{display:flex;align-items:center;gap:4px;padding:0 36px 13px;border-bottom:1px solid var(--line);color:var(--soft)}.formatting>span{width:1px;height:16px;background:var(--line);margin:0 6px}.writing{position:relative;flex:1;min-height:120px;display:flex;overflow:hidden}.editor{display:block;resize:none;border:0;outline:none;flex:1;width:100%;min-width:0;padding:28px 42px;line-height:1.9!important;font-size:14px!important;background:transparent;color:var(--ink);tab-size:2}.editor::placeholder{color:color-mix(in srgb,var(--ink) 30%,transparent)}.preview{padding:28px 42px;overflow:auto;flex:1;min-width:0;overflow-wrap:anywhere;line-height:1.85}.split .editor,.split .preview{width:50%;padding:24px}.split .preview{border-left:1px solid var(--line)}.preview :global(h1),.preview :global(h2),.preview :global(h3){margin:1em 0 .6em;line-height:1.4}.preview :global(p){margin:0 0 1em}.preview :global(a){color:var(--accent);text-decoration:underline}.preview :global(pre){overflow:auto;background:var(--wash);padding:16px;border-radius:8px}.preview :global(blockquote){border-left:3px solid var(--accent);margin:1em 0;padding-left:18px;color:var(--soft)}.preview :global(table){border-collapse:collapse;width:100%;font-size:12px}.preview :global(th),.preview :global(td){border:1px solid var(--line);padding:8px}.preview :global(ul),.preview :global(ol){padding-left:22px}.preview :global(input){pointer-events:none}footer{height:41px;border-top:1px solid var(--line);padding:0 28px;display:flex;align-items:center;justify-content:space-between;font-size:10px;color:var(--soft);flex-shrink:0}.save-status{border:0;background:none;display:flex;align-items:center;gap:6px;font-size:10px}.save-status:disabled{opacity:1!important}.unsaved-dot{width:5px;height:5px;border-radius:50%;background:var(--warning)}.notice{margin:12px 24px 0;padding:12px 14px;border:1px solid color-mix(in srgb,var(--danger) 24%,transparent);border-radius:8px;display:flex;justify-content:space-between;font-size:12px;background:color-mix(in srgb,var(--danger) 5%,var(--paper))}.notice-actions{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}.recovery{margin:18px 24px;padding:16px;background:var(--wash);border-radius:10px;font-size:12px}.recovery p{color:var(--soft);font-size:11px;margin:3px 0 9px}.recovery>div{display:flex;align-items:center;justify-content:space-between}.sidebar-hidden{grid-template-columns:minmax(0,1fr)}.sidebar-hidden aside{display:none}.mobile-back{display:none}
   .outline-wrap{position:relative;flex-shrink:0}.outline-popover{position:absolute;z-index:9;top:calc(100% + 7px);right:0;width:min(290px,calc(100vw - 24px));max-height:min(360px,60vh);overflow:auto;padding:8px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:0 14px 34px #0005}.outline-label{display:block;padding:3px 8px 7px;font-size:9px;letter-spacing:1px;color:var(--soft);font-weight:600}.outline-item{display:block;width:100%;border:0;border-radius:6px;padding:8px 9px 8px calc(8px + (var(--outline-level) - 1) * 10px);background:transparent;color:var(--ink);font-size:11px;line-height:1.35;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.outline-item:hover,.outline-item:focus-visible{background:var(--wash)}.outline-popover p{padding:10px 9px;color:var(--soft);font-size:11px;line-height:1.5}

@@ -331,3 +331,27 @@ copy, canonical copy captured at recovery and any pending candidate. Select an
 earlier sharing session to retrieve its retained copies after stopping. Download the versions you
 need, stop sharing, reconcile privately, and create a new link to resume.
 Never assume a failed or interrupted save was accepted.
+
+## Optional device speech
+
+With a compatible Tend host, open **Device speech settings** inside Notes.
+Download English dictation, read-aloud, and only the voices you want on this
+browser or device. Ordinary note opening does not download or run speech models.
+
+**Dictate text** starts the microphone only after you choose Start. Review the
+transcript, then insert it at the original cursor as one undoable edit. Switching
+notes or a conflicting edit prevents insertion into the wrong note and keeps the
+transcript available to copy. Audio is processed locally and is not saved as a
+recording. Inserted text uses normal Notes saving and synchronization.
+
+**Read aloud** reads selected text, or the current note when nothing is selected.
+It skips Markdown metadata and code, reads table cells in order, and provides
+pause, resume and stop controls. Voice files can be downloaded, previewed,
+selected as the default, and removed independently in settings.
+
+Installed speech can run offline in a prepared Notes app. Downloads belong to
+this browser profile; clearing device data or browser storage eviction may
+require downloading them again. Device speech requires a secure browser with
+WebAssembly SIMD, workers, service workers, Web Locks and audio support. Mobile
+background playback and microphone behavior remain subject to browser limits.
+See [the speech milestone](docs/local-speech-milestone.md) for acceptance scope.
