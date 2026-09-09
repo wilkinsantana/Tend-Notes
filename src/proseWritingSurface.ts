@@ -76,7 +76,17 @@ export class WritingSurface {
  get selectionStart(){return this.selection.start;}get selectionEnd(){return this.selection.end;}get readOnly(){return this.locked;}
  contains(target:EventTarget|null){return target instanceof Node&&this.view.dom.contains(target);}
  setSelectionRange(start:number,end:number){this.select(start,end);}
- select(start:number,end=start){this.view.dispatch(this.view.state.tr.setSelection(TextSelection.between(this.view.state.doc.resolve(this.toRich(start)),this.view.state.doc.resolve(this.toRich(end)))).scrollIntoView());}
+ select(start:number,end=start){
+  this.view.dispatch(this.view.state.tr.setSelection(TextSelection.between(this.view.state.doc.resolve(this.toRich(start)),this.view.state.doc.resolve(this.toRich(end)))).scrollIntoView());
+  const {doc,selection}=this.view.state;
+  // Find keeps focus in its input. Reveal after layout/decorations settle,
+  // scrolling only this editor rather than depending on the DOM focus range.
+  requestAnimationFrame(()=>{
+   if(this.view.isDestroyed||this.view.state.doc!==doc||!this.view.state.selection.eq(selection))return;
+   const bounds=this.view.dom.getBoundingClientRect(),caret=this.view.coordsAtPos(selection.from);
+   if(caret.top<bounds.top||caret.bottom>bounds.bottom)this.view.dom.scrollTop+=caret.top-bounds.top-this.view.dom.clientHeight/3;
+  });
+ }
  setBody(body:string,selection?:Selection){
   if(body===this.source)return;
   const previous=selection??this.selection;this.source=body;this.model=new RichDocument(body);
