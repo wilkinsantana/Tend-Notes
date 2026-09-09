@@ -2,7 +2,11 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+const runtime = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).dependencies;
 export default defineConfig({
+  // Direct-import browser fixtures and the lazy editor must share the same
+  // initial optimizer graph; late discovery otherwise reloads active test pages.
+  optimizeDeps: { include: [...Object.keys(runtime).filter(name => !['svelte', 'lucide-svelte'].includes(name)), 'markdown-it/lib/token.mjs'] },
   plugins: [svelte({ compilerOptions: { css: 'injected' } }), {
     name: 'bundled-license-inventory',
     generateBundle(_, bundle) {
