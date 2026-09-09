@@ -346,3 +346,8 @@ context. Microphone capture and read-aloud are mutually exclusive in the UI.
 This interface is not proof that a host has shipped every runtime or voice.
 Absent capabilities remain hidden, and unavailable downloads must fail visibly
 without a cloud speech fallback.
+
+Speech entry points stay visible when a capability is available but its assets
+are not installed: the dictation icon opens dictation setup and the speaker
+opens read-aloud setup. Dictation is shown only while editing a writable note.
+Read-aloud remains available in view mode and does not require write access.

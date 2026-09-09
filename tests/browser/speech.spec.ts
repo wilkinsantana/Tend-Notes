@@ -79,3 +79,31 @@ test('mobile voice settings download voices separately and select a default',asy
   await expect(settings.getByRole('button',{name:'Download voice',exact:true})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
+
+test('speech icons are visible before downloads and offer only the selected feature',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await fixture(page);
+  await page.goto('/');
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  const read=page.getByRole('button',{name:'Read selection or note aloud',exact:true});
+  const dictate=page.getByRole('button',{name:'Dictate text',exact:true});
+  await expect(read).toBeVisible();
+  await expect(dictate).toHaveCount(0);
+  await read.click();
+  const setup=page.getByRole('dialog',{name:'Device speech settings'});
+  await expect(setup.getByRole('button',{name:/Download read-aloud model/})).toBeVisible();
+  await expect(setup.getByRole('button',{name:'Download local dictation'})).toHaveCount(0);
+  await setup.getByRole('button',{name:'Close speech settings'}).click();
+  await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
+  await expect(dictate).toBeVisible();
+  await dictate.click();
+  await expect(setup.getByRole('button',{name:'Download local dictation'})).toBeVisible();
+  await expect(setup.getByRole('button',{name:/Download read-aloud model/})).toHaveCount(0);
+  await setup.getByRole('button',{name:'Close speech settings'}).click();
+  await page.getByRole('button',{name:'Rich text writing',exact:true}).click();
+  await expect(dictate).toBeVisible();
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await expect(dictate).toHaveCount(0);
+  await expect(read).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});

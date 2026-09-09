@@ -74,6 +74,12 @@ describe('dictation insertion guard', () => {
     expect(result.after.start).toBe(result.after.end);
   });
 
+  test('keeps sentence periods and decimals plain while preserving literal list markers', () => {
+    const result = prepareDictationInsertion({...state, transcript: 'Hello. It costs 3.50.\n1. Keep this literal.'}, current);
+    expect(result.body).toContain('Hello. It costs 3.50.');
+    expect(result.body).toContain('1\\. Keep this literal.');
+  });
+
   test('refuses another note or changed body without consuming the transcript', () => {
     expect(() => prepareDictationInsertion(state, {...current, noteId: 'note-2'})).toThrow('Open “Idea.md”');
     expect(() => prepareDictationInsertion(state, {...current, content: 'new', body: 'new'})).toThrow('changed after dictation');

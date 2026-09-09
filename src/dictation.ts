@@ -200,7 +200,9 @@ export class DictationController {
 function plainMarkdown(text: string) {
   return cleanSegment(text)
     .replace(/\\/g, '\\\\')
-    .replace(/([`*_{}\[\]()<>#+\-.!|>~])/g, '\\$1');
+    .replace(/([`*_{}\[\]()<>#+\-!|>~])/g, '\\$1')
+    // Only a line-leading numbered-list marker gives a period Markdown meaning.
+    .replace(/^( {0,3}\d{1,9})\.(?=[ \t])/gm, '$1\\.');
 }
 
 export function prepareDictationInsertion(

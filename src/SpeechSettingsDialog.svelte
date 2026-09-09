@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { Check, Download, LoaderCircle, Play, Settings2, Trash2, Volume2, X } from 'lucide-svelte';
+  import { Check, Download, LoaderCircle, Play, Speech as SpeechIcon, Settings2, Trash2, Volume2, X } from 'lucide-svelte';
   import type { Speech, SpeechInstallProgress, SpeechTts } from './host';
   import { createSpeechPlayback } from './speechPlayback';
 
   type TtsState = Awaited<ReturnType<SpeechTts['getInstallState']>>;
-  let {speech, onstatus, onttsstatus, onclose}: {speech: Speech; onstatus: (status: {installed: boolean; bytes: number}) => void; onttsstatus: (status: TtsState | null) => void; onclose: () => void} = $props();
+  let {speech, section = 'all', onstatus, onttsstatus, onclose}: {speech: Speech; section?: 'all'|'dictation'|'tts'; onstatus: (status: {installed: boolean; bytes: number}) => void; onttsstatus: (status: TtsState | null) => void; onclose: () => void} = $props();
   const tts = $derived(speech.tts);
   const voices = $derived(tts?.listVoices() ?? []);
   let selectedVoice = $state('');
@@ -118,15 +118,16 @@
 </script>
 
 <div class="speech-layer" role="presentation"><div class="speech-dialog" role="dialog" aria-modal="true" aria-label="Device speech settings" tabindex="-1" use:focusDialog>
-  <header><div><h2><Settings2 size={20}/> Device speech</h2><p>Audio and text are processed locally. Dictation downloads come from Moonshine AI; read-aloud models and voices come from its Hugging Face mirror; inserted transcripts still use normal Notes save and sync.</p></div><button class="close" aria-label="Close speech settings" onclick={onclose} disabled={allBusy}><X size={19}/></button></header>
-  <div class="speech-card">
+  <header><div><h2>{#if section === 'dictation'}<SpeechIcon size={22}/> Dictation{:else if section === 'tts'}<Volume2 size={22}/> Read aloud{:else}<Settings2 size={20}/> Device speech{/if}</h2><p>Audio and text are processed locally. Dictation downloads come from Moonshine AI; read-aloud models and voices come from its Hugging Face mirror; inserted transcripts still use normal Notes save and sync.</p></div><button class="close" aria-label="Close speech settings" onclick={onclose} disabled={allBusy}><X size={19}/></button></header>
+  {#if section !== 'tts'}<div class="speech-card">
     <div class="card-title"><div><h3>Local dictation</h3><p>Turn speech into a transcript you review before inserting into a note.</p></div>{#if loading}<LoaderCircle class="spin" size={18}/>{:else if installed}<span class="ready"><Check size={15}/> Ready</span>{/if}</div>
     {#if installing}<div class="progress-copy"><span>Downloading dictation…</span><span>{total ? `${percent}% · ${size(received)} of ${size(total)}` : size(received)}</span></div><progress max={total || 1} value={received}></progress><button onclick={cancelInstall}>Cancel download</button>
     {:else if installed}<p class="details">Uses {size(bytes)} total, including the 45 MB recognition model. Removing it does not change your notes or inserted transcripts.</p><button class="remove" onclick={() => void remove()} disabled={allBusy}>{#if removing}<LoaderCircle class="spin" size={15}/> Removing…{:else}<Trash2 size={15}/> Remove dictation download{/if}</button>
     {:else if !loading}<p class="details">Downloads {size(bytes)} total, including the 45 MB recognition model. The host verifies all required files before dictation becomes available.</p><button class="primary" onclick={() => void install()} disabled={allBusy}><Download size={15}/> Download local dictation</button>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </div>
-  {#if tts}<div class="speech-card">
+  {/if}
+  {#if tts && section !== 'dictation'}<div class="speech-card">
     <div class="card-title"><div><h3>Read aloud</h3><p>Listen to readable note text with an American or British English voice.</p></div>{#if ttsLoading}<LoaderCircle class="spin" size={18}/>{:else if ttsState?.model === 'ready'}<span class="ready"><Check size={15}/> Model ready</span>{/if}</div>
     {#if ttsTask === 'model' || ttsTask === 'voice'}<div class="progress-copy"><span>{ttsProgress?.phase ?? 'Preparing'} {ttsTask === 'voice' ? 'voice' : 'read-aloud model'}…</span><span>{ttsProgress?.totalBytes ? `${ttsPercent}% · ${size(ttsProgress.completedBytes)} of ${size(ttsProgress.totalBytes)}` : ''}</span></div><progress max={ttsProgress?.totalBytes || 1} value={ttsProgress?.completedBytes || 0}></progress><button onclick={cancelTtsDownload}>Cancel download</button>
     {:else if !ttsLoading && ttsState?.model !== 'ready'}<p class="details">Downloads the local voice model only when you choose. Voice files are separate so you keep only the voices you use.</p><button class="primary" onclick={() => void installModel()} disabled={allBusy}><Download size={15}/> Download read-aloud model {ttsState?.modelBytes.total ? `· ${size(ttsState.modelBytes.total)}` : ''}</button>
