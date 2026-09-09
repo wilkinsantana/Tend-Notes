@@ -1,7 +1,7 @@
 <script lang="ts">
   import { renderDocument } from './markdown';
   import type { Documents } from './host';
-  let {content, documents, noteId}: {content: string; documents: Documents; noteId: string} = $props();
+  let {content, documents, noteId, onnotelink}: {content: string; documents: Documents; noteId: string; onnotelink?: (id:string)=>void} = $props();
   let element: HTMLDivElement;
   const rendered = $derived(renderDocument(content));
   $effect(() => {
@@ -48,7 +48,7 @@
         }
       } catch(e) { if(active) { button.disabled=false; button.textContent=(e instanceof Error ? e.message : 'Attachment unavailable') + ' · retry'; } }
     }
-    const click = (event: MouseEvent) => { const target = (event.target as Element).closest<HTMLButtonElement>('button[data-notes-media]'); if(target && element.contains(target)) void load(target); };
+    const click = (event: MouseEvent) => { const link=(event.target as Element).closest<HTMLButtonElement>('button[data-notes-link]'); if(link && element.contains(link)) { onnotelink?.(link.dataset.notesLink!); return; } const target = (event.target as Element).closest<HTMLButtonElement>('button[data-notes-media]'); if(target && element.contains(target)) void load(target); };
     element.addEventListener('click',click);
     // Local files need no third-party consent. Remote content stays click-to-load.
     queueMicrotask(() => { if(active) for(const button of element.querySelectorAll<HTMLButtonElement>('button[data-notes-media]')) if(result.media[Number(button.dataset.notesMedia)]?.local) void load(button); });
@@ -57,6 +57,7 @@
 </script>
 <div bind:this={element} class="rendered-markdown">{@html rendered.html}</div>
 <style>
+  .rendered-markdown :global(button[data-notes-link]){color:var(--accent);text-decoration:underline;cursor:pointer;background:none;border:0;font:inherit;padding:0}
   .rendered-markdown :global(strong){font-weight:700}.rendered-markdown :global(em){font-style:italic}.rendered-markdown :global(h1){font-size:1.8em}.rendered-markdown :global(h2){font-size:1.45em}.rendered-markdown :global(h3){font-size:1.2em}.rendered-markdown :global(ul){list-style:disc}.rendered-markdown :global(ol){list-style:decimal}.rendered-markdown :global(img){display:block;max-width:100%;height:auto;border-radius:8px;margin:12px 0}.rendered-markdown :global(audio){width:100%;margin:12px 0}.rendered-markdown :global(iframe){width:100%;aspect-ratio:16/9;border:0;border-radius:8px;margin:12px 0}.rendered-markdown :global(button[data-notes-media]){display:block;width:100%;padding:22px 16px;background:var(--wash);color:var(--accent);border:1px solid var(--line);border-radius:9px;text-align:left;margin:10px 0}.rendered-markdown :global(code){font-family:monospace;background:var(--wash);padding:2px 4px;border-radius:3px}.rendered-markdown :global(pre code){padding:0}.rendered-markdown :global(input){accent-color:var(--accent)}
 
   .rendered-markdown :global(.table-scroll){max-width:100%;overflow-x:auto;margin:12px 0;overscroll-behavior-x:contain}

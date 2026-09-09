@@ -211,3 +211,11 @@ writing, Notes-only PWA and offline synchronization remain unfinished.
   conflict ownership remain unchanged. Dependencies ship with license notices.
 - Browser and composition checks do not replace real mobile keyboard and
   screen-reader acceptance; the Notes-only PWA remains a separate pending gate.
+
+## Structured writing and connected notes
+
+The current implementation and candidate reconciliation are tracked in
+[Rich text editor v2](docs/rich-text-editor-v2.md). First deliver structured rich
+editing and on-demand backlinks; saved smart views follow. Preserve existing
+recovery, task and offline foundations. Real-device acceptance, stable link
+identity, rendered embedded blocks and host version history remain open gates.

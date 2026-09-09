@@ -1,3 +1,4 @@
+import { linkedNoteId } from './backlinks';
 import { renderFormula } from './math';
 import { Marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -34,6 +35,8 @@ export function renderDocument(content: string): {html: string; media: Media[]} 
       return placeholder({kind:'image',url:href,label:text || 'Image',local});
     },
     link({href, text, tokens}) {
+      const noteId = linkedNoteId(href);
+      if (noteId) return `<button type="button" data-notes-link="${escape(noteId)}">${this.parser.parseInline(tokens)}</button>`;
       const video = youtubeId(href);
       if (video) return placeholder({kind:'youtube',url:video,label:text || 'YouTube video',local:false});
       if (attachmentPattern.test(href)) return placeholder({kind:/\.(ogg|webm|mp3|m4a|wav)$/.test(href)?'audio':'image',url:href,label:text || 'Attachment',local:true});
@@ -55,8 +58,8 @@ export function renderDocument(content: string): {html: string; media: Media[]} 
   parser.use({extensions:[{name:'legacyBold',level:'inline',start(src){return src.indexOf('**');},tokenizer(src){const match=/^\*\*([^*\n]+\S)[ \t]+\*\*/.exec(src);if(match)return {type:'legacyBold',raw:match[0],text:match[1]};},renderer(token){return `<strong>${escape(token.text as string)}</strong>`;}}]});
   const html = DOMPurify.sanitize(parser.parse(content) as string, {
     ALLOWED_TAGS:['p','br','hr','h1','h2','h3','h4','h5','h6','strong','em','del','blockquote','ul','ol','li','pre','code','a','table','thead','tbody','tr','th','td','input','button','span'],
-    ALLOWED_ATTR:['href','title','type','checked','disabled','start','align','rel','target','data-notes-media','data-notes-math'],
-    ADD_URI_SAFE_ATTR:['data-notes-media','data-notes-math','type'],
+    ALLOWED_ATTR:['href','title','type','checked','disabled','start','align','rel','target','data-notes-media','data-notes-math','data-notes-link'],
+    ADD_URI_SAFE_ATTR:['data-notes-media','data-notes-math','data-notes-link','type'],
     ALLOWED_URI_REGEXP:/^(?:https:\/\/|mailto:)/i, ALLOW_DATA_ATTR:false,
   });
   return {html: html.replace(/<span data-notes-math="(\d+)"><\/span>/g, (_, index) => formulas[Number(index)] ?? ''),media};

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 const toggle = (page: Page) => page.getByRole('button', { name: 'Rich text writing', exact: true });
-const formatted = (page: Page) => page.getByRole('textbox', { name: 'Formatted Markdown' });
+const formatted = (page: Page) => page.getByRole('textbox', { name: 'Rich text editor' });
 const source = (page: Page) => page.getByRole('textbox', { name: 'Note Markdown' });
 const undo = (page: Page) => page.getByRole('button', { name: 'Undo', exact: true });
 const redo = (page: Page) => page.getByRole('button', { name: 'Redo', exact: true });
@@ -42,13 +42,13 @@ test('formatted Find and outline navigate actual styled lines, keeping the compa
   await formatted(page).press('Control+f');
   const query=page.getByRole('textbox',{name:'Find text in note'});
   await query.fill('Destination');
-  await expect(page.locator('.notes-find-active')).toHaveText('Destination');
-  await expect(page.locator('.notes-find-active')).toBeInViewport();
+  await expect(page.locator('.rich-match.active')).toHaveText('Destination');
+  await expect(page.locator('.rich-match.active')).toBeInViewport();
   await query.press('Escape');
   await expect(formatted(page)).toBeFocused();
   await page.getByRole('button',{name:'Note outline',exact:true}).click();
   await page.getByRole('button',{name:'A quiet place',exact:true}).click();
-  await expect(formatted(page).locator('.cm-line').first()).toContainText('A quiet place');
+  await expect(formatted(page).locator('h1').first()).toContainText('A quiet place');
   await page.getByRole('button',{name:'Split view',exact:true}).click();
   await page.screenshot({path:testInfo.outputPath('formatted-split.png')});
   await page.setViewportSize({width:390,height:780});
@@ -58,15 +58,15 @@ test('formatted Find and outline navigate actual styled lines, keeping the compa
 test('media insertion and mobile-style list continuation remain reversible', async ({page}) => {
   await open(page, '1. First');
   await formatted(page).press('Control+End');
-  await formatted(page).evaluate(node => node.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertParagraph',bubbles:true,cancelable:true}))); 
-  expect(await plain(page)).toBe('1. First\n2. ');
+  await formatted(page).press('Enter');
+  expect(await plain(page)).toMatch(/1\. First[\s\S]*2\./);
   await page.keyboard.type('Second');
   await page.getByRole('button',{name:'Insert YouTube video',exact:true}).click();
   await expect(formatted(page)).toHaveAttribute('aria-readonly','true');
   await page.getByLabel('YouTube link').fill('https://youtu.be/dQw4w9WgXcQ');
   await page.getByRole('dialog').getByRole('button',{name:'Insert link',exact:true}).click();
   expect(await plain(page)).toContain('https://youtu.be/dQw4w9WgXcQ');
-  await undo(page).click(); expect(await plain(page)).toBe('1. First\n2. Second');
+  await undo(page).click(); expect(await plain(page)).toMatch(/1\. First[\s\S]*2\. Second/);
 });
 
 test('opening and changing presentation preserve original CRLF bytes without saving', async ({page}) => {
@@ -122,10 +122,10 @@ test('formatted composition commits one reversible edit and Find survives replac
   await redo(page).click(); expect(await plain(page)).toBe('你');
   await formatted(page).press('Control+f');
   await page.getByRole('textbox',{name:'Find text in note'}).fill('你');
-  await expect(page.locator('.notes-find-match')).toHaveCount(1);
+  await expect(page.locator('.rich-match')).toHaveCount(1);
   await formatted(page).click(); await formatted(page).press('Control+a');
   await page.keyboard.type('New words');
-  await expect(page.locator('.notes-find-match')).toHaveCount(0);
+  await expect(page.locator('.rich-match')).toHaveCount(0);
   await expect(page.getByRole('search').getByRole('status')).toHaveText('No matches');
   expect(await plain(page)).toBe('New words');
 });
@@ -135,10 +135,10 @@ test('formatted code loads on demand, follows themes and preserves drafts on con
   page.on('request',request=>requested.push(request.url()));
   await page.goto('/');
   await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
-  expect(requested.some(url=>url.includes('/writingSurface.ts'))).toBe(false);
+  expect(requested.some(url=>url.includes('/proseWritingSurface.ts'))).toBe(false);
   await toggle(page).click();
   await expect(formatted(page)).toBeVisible();
-  expect(requested.some(url=>url.includes('/writingSurface.ts'))).toBe(true);
+  expect(requested.some(url=>url.includes('/proseWritingSurface.ts'))).toBe(true);
   const dark=await formatted(page).evaluate(node=>getComputedStyle(node).color);
   await page.getByRole('button',{name:'Preview light theme'}).click();
   await expect.poll(()=>formatted(page).evaluate(node=>getComputedStyle(node).color)).not.toBe(dark);

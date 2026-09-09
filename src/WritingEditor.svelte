@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { WritingSurface, WritingChange } from './writingSurface';
+  import type { WritingSurface } from './proseWritingSurface';
+  import type { WritingChange } from './writingSurface';
   import type { TextMatch } from './find';
   let { body, readOnly, matches, activeStart, onchange, onundo, onredo, Surface, surface = $bindable() }: {
     body: string; readOnly: boolean; matches: TextMatch[]; activeStart: number;
     onchange: (change: WritingChange) => void; onundo: () => void; onredo: () => void;
-    Surface: typeof import('./writingSurface').WritingSurface; surface?: WritingSurface;
+    Surface: typeof import('./proseWritingSurface').WritingSurface; surface?: WritingSurface;
   } = $props();
   let parent: HTMLDivElement;
   onMount(() => {

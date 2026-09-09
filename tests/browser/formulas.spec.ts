@@ -34,13 +34,13 @@ test('code and source HTML stay literal; malformed formulas stay editable',async
   await page.getByLabel('LaTeX equation').press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
-test('rich writing hides inactive syntax without modifying Markdown',async({page})=>{
+test('rich writing keeps formatting while focused without modifying Markdown',async({page})=>{
   await page.goto('/'); await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   const source=page.getByRole('textbox',{name:'Note Markdown'});
   const text='# Heading\n\n**Bold** and *italic*.\n\nWrite here';
   await source.fill(text); await source.press('Control+End');
   await page.getByRole('button',{name:'Rich text writing',exact:true}).click();
-  const rich=page.getByRole('textbox',{name:'Formatted Markdown'});
+  const rich=page.getByRole('textbox',{name:'Rich text editor'});
   await expect(rich).toContainText('Bold and italic.');
   await expect(rich).not.toContainText('**Bold**');
   await page.getByRole('button',{name:'Rich text writing',exact:true}).click();
@@ -71,7 +71,7 @@ test('writing mode controls sit together and enter writing from Preview',async({
   await expect(modes.getByRole('button').nth(1)).toHaveAccessibleName('Rich text writing');
   await page.getByRole('button',{name:'Preview',exact:true}).click();
   await modes.getByRole('button',{name:'Rich text writing',exact:true}).click();
-  await expect(page.getByRole('textbox',{name:'Formatted Markdown'})).toBeVisible();
+  await expect(page.getByRole('textbox',{name:'Rich text editor'})).toBeVisible();
   await modes.getByRole('button',{name:'Rich text writing',exact:true}).click();
   await expect(page.getByRole('textbox',{name:'Note Markdown'})).toBeVisible();
 });
@@ -79,12 +79,11 @@ test('writing mode controls sit together and enter writing from Preview',async({
 test('rich selection stays blue through focus and theme changes',async({page})=>{
   await page.goto('/');await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await page.getByRole('button',{name:'Rich text writing',exact:true}).click();
-  const rich=page.getByRole('textbox',{name:'Formatted Markdown'});
+  const rich=page.getByRole('textbox',{name:'Rich text editor'});
   await rich.press('Control+a');
-  const selection=page.locator('.cm-selectionBackground').first();
-  await expect(selection).toHaveCSS('background-color','rgba(59, 130, 246, 0.35)');
+  const color=()=>rich.evaluate(node=>getComputedStyle(node.querySelector('p') ?? node,'::selection').backgroundColor);
+  expect(await color()).toBe('rgb(37, 99, 235)');
   await page.getByRole('button',{name:'Preview light theme'}).click();
-  await expect(selection).toHaveCSS('background-color','rgba(59, 130, 246, 0.35)');
-  await rich.focus();
-  await expect(selection).toHaveCSS('background-color','rgba(59, 130, 246, 0.35)');
+  expect(await color()).toBe('rgb(37, 99, 235)');
+  await rich.focus();expect(await color()).toBe('rgb(37, 99, 235)');
 });

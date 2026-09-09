@@ -283,11 +283,27 @@ containing your notes and their uploaded attachments, with relative links intact
 Connected-drive and automatic backups use the same complete archive. Linked
 external media remains a link and needs its original service to stay available.
 
-## Formatted writing
+## Rich writing
 
-Use the **Formatted writing** icon in the formatting toolbar to style headings,
-emphasis, links and code while you write. Markdown symbols remain editable.
-Toggle it again to return to plain source; Split and Preview remain available.
-Both presentations share Undo/Redo, search, media insertion and autosave.
-Switching presentation never saves a note by itself. The optional editor loads
-only when requested, keeping ordinary capture lightweight.
+Use **Rich text writing** beside **Edit Markdown** to edit formatted headings,
+paragraphs, emphasis, links, lists and tables directly. Focusing text keeps it
+formatted. Task checkboxes update the same Markdown used by ToDo. Table actions
+add or remove rows and columns; Tab moves between cells. Tables scroll within
+their own area. Merged cells and multiline cells are not supported.
+
+Toggle again for Markdown source. Both modes share Undo/Redo, search, attachment
+insertion and autosave. Switching modes alone never saves or rewrites a note.
+The editor loads only when requested. Unsupported blocks, including formulas,
+media and raw HTML, are protected source blocks in rich mode; use source mode to
+edit them and Preview to read them. Frontmatter remains protected.
+
+## Connected notes
+
+Open **Links to this note** to find accessible notes linking to the current one.
+**Copy link to this note** copies an address you can paste into the Insert link
+dialog or use as a Markdown link destination. Clicking an internal link in
+Preview opens the linked note through the normal save protection.
+
+These links belong to this Tend instance. Renaming, moving or exporting notes
+may change their identifiers and break links. Searches are on demand and bounded;
+partial or offline results are explicitly identified.

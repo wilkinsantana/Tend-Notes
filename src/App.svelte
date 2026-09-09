@@ -5,13 +5,14 @@
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import ResponsiveToolbar from './ResponsiveToolbar.svelte';
   import Preview from './Preview.svelte';
+  import BacklinksPanel from './BacklinksPanel.svelte';
   import EditorFind from './EditorFind.svelte';
   import FindHighlights from './FindHighlights.svelte';
   import WritingEditor from './WritingEditor.svelte';
   import FormulaDialog from './FormulaDialog.svelte';
   import NoteContextMenu from './NoteContextMenu.svelte';
   import { Sigma } from 'lucide-svelte';
-  import type { WritingSurface } from './writingSurface';
+  import type { WritingSurface } from './proseWritingSurface';
   import type { TextMatch } from './find';
   import TemplatePicker from './TemplatePicker.svelte';
   import TodoPanel from './TodoPanel.svelte';
@@ -29,6 +30,18 @@
   import BackupPanel from './BackupPanel.svelte';
   import { unpack, withBody, withOrganization, normalizeTag, COLORS, type Organization } from './organization';
   let { host }: { host: Host } = $props();
+  let backlinksOpen = $state(false);
+  let linkDialog = $state<{id:string;body:string}|null>(null);
+  let linkAddress = $state('https://');
+  async function insertRichLink() {
+    const target=linkDialog;linkDialog=null;await tick();
+    if (target && view?.document.id===target.id && editorBody===target.body && !historyBlocked) writingSurface?.setLink(linkAddress);
+  }
+  async function openLinkedNote(id: string) {
+    try { const note = await host.documents!.read(id); await open(note); }
+    catch { error = 'This linked note is unavailable. It may have moved, been renamed, or be outside your access.'; }
+  }
+
   let libraries = $state<Library[]>([]);
   let libraryId = $state('');
   let notes = $state<Note[]>([]);
@@ -265,20 +278,25 @@
   function insertFormula(value:string) {
     const selected=formulaSelection; formulaSelection=null;
     if (!selected || !view || view.document.id!==selected.id || editorBody!==selected.body || historyBlocked) { error='The note changed. Open Formula again to insert at the current position.'; return; }
+    if (formattedWriting && writingSurface) {
+      const surface=writingSurface;
+      void tick().then(() => { if (writingSurface===surface && view?.document.id===selected.id && editorBody===selected.body && !historyBlocked) surface.insertMarkdown(value); });
+      return;
+    }
     const body=selected.body.slice(0,selected.start)+value+selected.body.slice(selected.end);
     commitEditorBody(body,selected,{start:selected.start+value.length,end:selected.start+value.length});
     void tick().then(()=>{editor?.focus();editor?.setSelectionRange(selected.start+value.length,selected.start+value.length);});
   }
   const editor = $derived(formattedWriting ? writingSurface : sourceEditor);
   let writingLoading = $state(false);
-  let Surface = $state<typeof import('./writingSurface').WritingSurface>();
+  let Surface = $state<typeof import('./proseWritingSurface').WritingSurface>();
   async function toggleWriting() {
     if (writingLoading) return;
     const enable = !(formattedWriting && mode !== 'preview');
     const documentId = view?.document.id;
     if (enable && !Surface) {
       writingLoading = true;
-      try { Surface = (await import('./writingSurface')).WritingSurface; }
+      try { Surface = (await import('./proseWritingSurface')).WritingSurface; }
       catch { error = 'Formatted writing could not start. Your Markdown is still here; try again.'; return; }
       finally { writingLoading = false; }
       if (!alive || view?.document.id !== documentId) return;
@@ -310,7 +328,7 @@
   const ready = $derived(host.documents?.version === 1 && !!host.user);
   const trashSupported = $derived(host.documents?.trash?.version === 1);
   const deletionUncertain = $derived(deletePending && deleteRequest?.documentId === view?.document.id);
-  const historyBlocked = $derived(opening || creating || deleting || actionBusy || !!deletionUncertain || !!mediaKind || !!formulaSelection);
+  const historyBlocked = $derived(opening || creating || deleting || actionBusy || !!deletionUncertain || !!mediaKind || !!formulaSelection || !!linkDialog);
   const selectedLibrary = $derived(libraries.find(l => l.id === libraryId));
   const parsed = $derived(unpack(view?.content ?? ''));
   const editorBody = $derived(parsed.body.replace(/\r\n?/g, '\n'));
@@ -361,7 +379,7 @@
     finally { indexing = false; if (alive && libraryId && libraryId !== id) void buildSearch(libraryId); }
   }
   async function refresh() {
-    if (trashOpen || todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind || formulaSelection) return;
+    if (trashOpen || todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind || formulaSelection || linkDialog) return;
     syncing = true;
     try {
       if (notes.length <= 100) await loadList();
@@ -847,6 +865,10 @@
   }
   function format(before: string, after = '', prefix = false) {
     if (!view || !editor || opening || creating || deleting || actionBusy || deletionUncertain) return;
+    if (formattedWriting && writingSurface) {
+      if (before==='[') { linkAddress='https://';linkDialog={id:view.document.id,body:editorBody};return; }
+      writingSurface.format(before, after, prefix); return;
+    }
     const selected = { start: editor.selectionStart, end: editor.selectionEnd };
     const result = editMarkdown(editor.value, selected.start, selected.end, before, after, prefix);
     commitEditorBody(result.content, selected, { start: result.start, end: result.end });
@@ -911,14 +933,19 @@
   }
   function insertMedia(markdown: string) {
     if (!view || !mediaTarget || view.document.id !== mediaTarget.id || view.content !== mediaTarget.content) throw new Error('Open the original note to insert this attachment.');
+    if (formattedWriting && writingSurface) {
+      const surface=writingSurface, target=mediaTarget; mediaKind=null;
+      void tick().then(() => { if (writingSurface===surface && view?.document.id===target.id && view.content===target.content && !historyBlocked) surface.insertMarkdown(markdown); });
+      return;
+    }
     const {start, end, body} = mediaTarget;
     const inserted = '\n' + markdown + '\n';
     commitEditorBody(body.slice(0, start) + inserted + body.slice(end), { start, end }, { start: start + inserted.length, end: start + inserted.length });
     mediaKind = null;
   }
   function shortcuts(event: KeyboardEvent) {
-    if (event.isComposing || !(event.ctrlKey || event.metaKey)) return;
-    if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind || formulaSelection) return;
+    if (event.defaultPrevented || event.isComposing || !(event.ctrlKey || event.metaKey)) return;
+    if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind || formulaSelection || linkDialog) return;
     if (event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); void quickCapture(); }
     if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
     if (event.target !== sourceEditor && !writingSurface?.contains(event.target)) return;
@@ -1032,7 +1059,7 @@
       {:else if todoOpen}
         <TodoPanel rows={todoState.rows} loading={todoState.loading} scanned={todoState.scanned} errors={todoState.errors} busy={todoState.busy} ontoggle={(key, checked) => void toggleTask(key, checked)} onopen={key => void openTask(key)} onrefresh={() => void taskWorkspace?.refresh()} onclose={() => void closeTodo()}/>
       {:else}
-      <header><button class="icon desktop-toggle" onclick={() => sidebar = !sidebar} aria-label={sidebar ? 'Hide notebooks' : 'Show notebooks'} title={sidebar ? 'Hide notebooks' : 'Show notebooks'}>{#if sidebar}<PanelLeftClose size={18}/>{:else}<PanelLeftOpen size={18}/>{/if}</button><button class="icon mobile-back" onclick={() => mobileEditor = false} aria-label="Back to notes"><ArrowLeft size={18}/></button><div class="breadcrumb">{#if view}<button class="note-title" aria-label="Rename current note" title="Rename note" onclick={() => beginRename(view!.document)}><h1>{title(view.document.name)}</h1></button>{:else}{selectedLibrary?.name ?? 'Your notes'}{/if}</div>{#if view}{#if quickCaptureTitle && host.documents?.rename}<button class="suggest-title" aria-label="Use first line as title" title={`Use “${quickCaptureTitle}” as title`} onclick={useFirstLineAsTitle}><TextCursorInput size={14}/><span>Use first line as title</span></button>{/if}<button class="icon focus-toggle" aria-label={focusMode ? "Exit focus mode" : "Focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} onclick={() => { focusMode = !focusMode; mode = "edit"; }}>{#if focusMode}<Minimize size={16}/>{:else}<Maximize size={16}/>{/if}</button><div class="outline-wrap" bind:this={outlineBoundary}><button class="icon" bind:this={outlineTrigger} aria-label="Note outline" title="Note outline · jump to source" aria-expanded={outlineOpen} aria-controls="note-outline" onclick={() => void toggleOutline()}><ListTree size={16}/></button>{#if outlineOpen}<div id="note-outline" class="outline-popover" role="dialog" aria-label="Note outline" tabindex="-1" use:dismissOutline onkeydown={outlineKeydown}>{#if outline.length}<span class="outline-label">JUMP TO SOURCE</span>{#each outline as heading, index (index)}<button class="outline-item" style={`--outline-level:${heading.level}`} onclick={() => void jumpToOutline(heading)}>{heading.label}</button>{/each}{:else}<p>No headings in this note yet.</p>{/if}</div>{/if}</div><div class="document-actions"><button class="icon" class:chosen={parsed.organization.pinned} aria-label={parsed.organization.pinned ? "Unpin note" : "Pin note"} aria-pressed={parsed.organization.pinned} title={parsed.organization.pinned ? "Unpin note" : "Pin note"} onclick={() => organize({pinned: !parsed.organization.pinned})}><Pin size={16}/></button><button class="icon" aria-label="Organize note" title="Tags and color" aria-expanded={organizeOpen} onclick={() => organizeOpen = !organizeOpen}><Tag size={16}/></button><button class="icon" aria-label="Export Markdown" title="Export Markdown" onclick={() => download(view!.content, view!.document.name)}><Download size={17}/></button><button class="icon" aria-label="Delete note" title="Delete note" onclick={() => beginDelete(view!.document)}><Trash2 size={16}/></button></div><div class="view-modes" aria-label="Editor view"><button class:active={mode === 'edit' && !formattedWriting} class="icon" aria-label="Edit Markdown" title="Edit Markdown" onclick={() => void editSource()}><PenLine size={16}/></button><button class="icon" class:active={formattedWriting && mode !== 'preview'} aria-label="Rich text writing" aria-pressed={formattedWriting && mode !== 'preview'} title={formattedWriting ? "Use plain Markdown source" : "Rich text writing · reveal Markdown on the active line"} disabled={writingLoading} onclick={() => void toggleWriting()}>{#if writingLoading}<LoaderCircle size={16} class="spin"/>{:else}<Type size={16}/>{/if}</button><button class:active={mode === 'split'} class="icon split-button" aria-label="Split view" title="Split view" aria-pressed={mode === 'split'} onclick={() => mode = mode === 'split' ? 'edit' : 'split'}><Columns2 size={16}/></button><button class:active={mode === 'preview'} class="icon" aria-label="Preview" title="Preview" onclick={() => mode = 'preview'}><Eye size={17}/></button></div>{/if}</header>
+      <header><button class="icon desktop-toggle" onclick={() => sidebar = !sidebar} aria-label={sidebar ? 'Hide notebooks' : 'Show notebooks'} title={sidebar ? 'Hide notebooks' : 'Show notebooks'}>{#if sidebar}<PanelLeftClose size={18}/>{:else}<PanelLeftOpen size={18}/>{/if}</button><button class="icon mobile-back" onclick={() => mobileEditor = false} aria-label="Back to notes"><ArrowLeft size={18}/></button><div class="breadcrumb">{#if view}<button class="note-title" aria-label="Rename current note" title="Rename note" onclick={() => beginRename(view!.document)}><h1>{title(view.document.name)}</h1></button>{:else}{selectedLibrary?.name ?? 'Your notes'}{/if}</div>{#if view}{#if quickCaptureTitle && host.documents?.rename}<button class="suggest-title" aria-label="Use first line as title" title={`Use “${quickCaptureTitle}” as title`} onclick={useFirstLineAsTitle}><TextCursorInput size={14}/><span>Use first line as title</span></button>{/if}<button class="icon focus-toggle" aria-label={focusMode ? "Exit focus mode" : "Focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} onclick={() => { focusMode = !focusMode; mode = "edit"; }}>{#if focusMode}<Minimize size={16}/>{:else}<Maximize size={16}/>{/if}</button><div class="outline-wrap" bind:this={outlineBoundary}><button class="icon" bind:this={outlineTrigger} aria-label="Note outline" title="Note outline · jump to source" aria-expanded={outlineOpen} aria-controls="note-outline" onclick={() => void toggleOutline()}><ListTree size={16}/></button>{#if outlineOpen}<div id="note-outline" class="outline-popover" role="dialog" aria-label="Note outline" tabindex="-1" use:dismissOutline onkeydown={outlineKeydown}>{#if outline.length}<span class="outline-label">JUMP TO SOURCE</span>{#each outline as heading, index (index)}<button class="outline-item" style={`--outline-level:${heading.level}`} onclick={() => void jumpToOutline(heading)}>{heading.label}</button>{/each}{:else}<p>No headings in this note yet.</p>{/if}</div>{/if}</div><div class="document-actions"><button class="icon" aria-label="Links to this note" title="Links to this note" aria-pressed={backlinksOpen} onclick={() => backlinksOpen = !backlinksOpen}><Link size={16}/></button><button class="icon" class:chosen={parsed.organization.pinned} aria-label={parsed.organization.pinned ? "Unpin note" : "Pin note"} aria-pressed={parsed.organization.pinned} title={parsed.organization.pinned ? "Unpin note" : "Pin note"} onclick={() => organize({pinned: !parsed.organization.pinned})}><Pin size={16}/></button><button class="icon" aria-label="Organize note" title="Tags and color" aria-expanded={organizeOpen} onclick={() => organizeOpen = !organizeOpen}><Tag size={16}/></button><button class="icon" aria-label="Export Markdown" title="Export Markdown" onclick={() => download(view!.content, view!.document.name)}><Download size={17}/></button><button class="icon" aria-label="Delete note" title="Delete note" onclick={() => beginDelete(view!.document)}><Trash2 size={16}/></button></div><div class="view-modes" aria-label="Editor view"><button class:active={mode === 'edit' && !formattedWriting} class="icon" aria-label="Edit Markdown" title="Edit Markdown" onclick={() => void editSource()}><PenLine size={16}/></button><button class="icon" class:active={formattedWriting && mode !== 'preview'} aria-label="Rich text writing" aria-pressed={formattedWriting && mode !== 'preview'} title={formattedWriting ? "Use plain Markdown source" : "Rich text writing"} disabled={writingLoading} onclick={() => void toggleWriting()}>{#if writingLoading}<LoaderCircle size={16} class="spin"/>{:else}<Type size={16}/>{/if}</button><button class:active={mode === 'split'} class="icon split-button" aria-label="Split view" title="Split view" aria-pressed={mode === 'split'} onclick={() => mode = mode === 'split' ? 'edit' : 'split'}><Columns2 size={16}/></button><button class:active={mode === 'preview'} class="icon" aria-label="Preview" title="Preview" onclick={() => mode = 'preview'}><Eye size={17}/></button></div>{/if}</header>
       {#if error}<div class="notice error" role="alert">{error}<button class="icon" aria-label="Dismiss message" onclick={() => error = ''}><X size={15}/></button></div>{/if}
       {#if recoveries.length && !view}
         <div class="recovery"><strong>Pick up an unsaved draft</strong><p>Recovery copies from this browser are ready when you are.</p>{#each recoveries as draft}<div><button class="quiet" onclick={() => void recover(draft)} disabled={opening}>{title(draft.document.name)}</button><button class="icon" aria-label={`Export recovery copy of ${draft.document.name}`} onclick={() => download(draft.content, draft.document.name)}><Download size={15}/></button></div>{/each}</div>
@@ -1059,13 +1086,18 @@
 {#snippet tool16()}<button class="icon" title="Divider" aria-label="Insert divider" onclick={() => format('\n\n---\n\n')}><Minus size={16}/></button>{/snippet}
 {#snippet tool17()}<button class="icon" title="Image · upload or link" aria-label="Insert image" onclick={() => openMedia('image')}><ImagePlus size={18}/></button>{/snippet}
 {#snippet tool18()}<button class="icon" title="YouTube video" aria-label="Insert YouTube video" onclick={() => openMedia('youtube')}><Youtube size={18}/></button>{/snippet}
+{#snippet tableRow()}<button class="icon" title="Add table row" aria-label="Add table row" onclick={() => writingSurface?.table('row')}><Plus size={16}/></button>{/snippet}
+{#snippet tableColumn()}<button class="icon" title="Add table column" aria-label="Add table column" onclick={() => writingSurface?.table('column')}><Columns2 size={16}/></button>{/snippet}
+{#snippet removeRow()}<button class="icon" title="Remove table row" aria-label="Remove table row" onclick={() => writingSurface?.table('delete-row')}><Minus size={16}/></button>{/snippet}
+{#snippet removeColumn()}<button class="icon" title="Remove table column" aria-label="Remove table column" onclick={() => writingSurface?.table('delete-column')}><Trash2 size={16}/></button>{/snippet}
 {#snippet tool19()}<button class="icon" title="Audio · upload or record" aria-label="Insert audio" onclick={() => openMedia('audio')}><Mic size={17}/></button>{/snippet}
-        {#if mode !== 'preview'}<div class="formatting"><ResponsiveToolbar tools={[tool0,tool1,tool2,tool3,tool4,tool5,tool6,tool7,tool8,tool9,tool10,tool11,tool12,tool13,tool14,tool15,tool16,tool17,tool18,tool19]}/></div>{/if}
+        {#if mode !== 'preview'}<div class="formatting"><ResponsiveToolbar tools={[tool0,tool1,tool2,tool3,tool4,tool5,tool6,tool7,tool8,tool9,tool10,tool11,tool12,tool13,tool14,tool15,tool16,tool17,tool18,tool19,...(formattedWriting ? [tableRow,tableColumn,removeRow,removeColumn] : [])]}/></div>{/if}
         {#if findOpen && mode !== 'preview'}<EditorFind bind:this={findPanel} body={editorBody} onmatches={(matches, activeStart) => { findMatches = matches; findActiveStart = activeStart; }} initialQuery={findInitialQuery} initialStart={findInitialStart} onselect={match => void revealSelection(match.start, match.end)} onclose={closeFind}/>{/if}
+        {#if backlinksOpen && host.documents}{#key view.document.id}<BacklinksPanel documents={host.documents} currentNoteId={view.document.id} onopen={note => { backlinksOpen=false; void open(note); }} onclose={() => backlinksOpen=false}/>{/key}{/if}
         <div class="writing" class:split={mode === 'split'} class:preview-only={mode === 'preview'}>
           {#if mode !== 'preview'}{#if formattedWriting && Surface}{#key view.document.id}<WritingEditor {Surface} body={editorBody} readOnly={historyBlocked} matches={findOpen ? findMatches : []} activeStart={findActiveStart} bind:surface={writingSurface} onchange={change => commitEditorBody(change.body, change.before, change.after, change.key)} onundo={() => applyHistory('undo')} onredo={() => applyHistory('redo')}/>{/key}{:else}<textarea class="editor" bind:this={sourceEditor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} oncompositionstart={() => { compositionKey = `composition:${++compositionSequence}`; }} oncompositionend={() => { compositionKey = null; pendingInput = null; }} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind} value={parsed.body} oninput={editorInput} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}{/if}
           {#if findOpen && mode !== 'preview' && !formattedWriting && sourceEditor}<FindHighlights editor={sourceEditor} body={editorBody} matches={findMatches} activeStart={findActiveStart}/>{/if}
-          {#if mode !== 'edit'}<!-- svelte-ignore a11y_click_events_have_key_events --><!-- svelte-ignore a11y_no_static_element_interactions --><div class="preview"><Preview content={parsed.body} documents={host.documents!} noteId={view.document.id}/></div>{/if}
+          {#if mode !== 'edit'}<!-- svelte-ignore a11y_click_events_have_key_events --><!-- svelte-ignore a11y_no_static_element_interactions --><div class="preview"><Preview onnotelink={id => void openLinkedNote(id)} content={parsed.body} documents={host.documents!} noteId={view.document.id}/></div>{/if}
         </div>
         <footer><span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span><button class="save-status" onclick={() => void save()} disabled={view.saving || !view.dirty || view.conflict}>{#if view.saving}<LoaderCircle size={13} class="spin"/> Saving…{:else if view.dirty}<span class="unsaved-dot"></span>{view.error ? 'Not saved' : 'Save now'}{:else}<Check size={14}/> All changes saved{/if}</button></footer>
       {:else}
@@ -1073,6 +1105,7 @@
       {/if}
       {/if}
     </main>
+    {#if linkDialog}<div class="rich-link-backdrop"><section class="rich-link-dialog" role="dialog" aria-modal="true" aria-label="Insert link" tabindex="-1" use:focusDialog onkeydown={e => { if(e.key==='Escape')linkDialog=null; }}><h2>Insert link</h2><form onsubmit={e => {e.preventDefault();void insertRichLink();}}><label>Link address<input aria-label="Link address" bind:value={linkAddress}/></label><p>Use an HTTPS address, email link, or copied Tend note link.</p><button type="button" onclick={() => linkDialog=null}>Cancel</button><button type="submit" disabled={!/^(https:\/\/|mailto:|tend-note:)/i.test(linkAddress)}>Insert link</button></form></section></div>{/if}
     {#if formulaSelection}<FormulaDialog initial={formulaSelection.body.slice(formulaSelection.start,formulaSelection.end)} oninsert={insertFormula} onclose={() => {formulaSelection=null;void tick().then(()=>editor?.focus());}}/>{/if}
     <input class="hidden" bind:this={filePicker} type="file" accept=".md,.markdown,text/markdown" onchange={importFile}/>
   {/if}
@@ -1108,6 +1141,8 @@
 </div>
 
 <style>
+  .rich-link-backdrop{position:absolute;inset:0;z-index:90;background:#0006;display:grid;place-items:center;padding:16px}.rich-link-dialog{width:min(440px,100%);background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 20px 70px #0005}.rich-link-dialog input{display:block;width:100%;box-sizing:border-box;margin:8px 0;padding:12px;background:var(--wash);color:var(--ink);border:1px solid var(--line);border-radius:8px;font-size:16px}.rich-link-dialog p{font-size:13px;color:var(--soft)}.rich-link-dialog button{min-height:44px;background:var(--wash);color:var(--ink);padding:8px 14px;border:1px solid var(--line);border-radius:8px;margin-right:8px}
+
   .editor::selection{background:#2563eb;color:#fff}
   .notes-app{--paper:var(--color-base-100,#151b19);--ink:var(--color-base-content,#d8e3df);--wash:var(--color-base-200,#1d2622);--line:color-mix(in srgb,var(--ink) 10%,transparent);--soft:color-mix(in srgb,var(--ink) 54%,transparent);--accent:var(--color-primary,#66b798);--accent-ink:var(--color-primary-content,#071a13);--warning:var(--color-warning,#d7ac64);--danger:var(--color-error,#dc7777);--danger-ink:var(--color-error-content,#250c0c);height:100%;min-height:360px;display:grid;grid-template-columns:236px minmax(0,1fr);color:var(--ink);background:color-mix(in srgb,var(--paper) var(--tend-panel-surface-alpha,100%),transparent);font:14px/1.5 var(--font-sans,system-ui,sans-serif);position:relative;container-type:inline-size;overflow:hidden;text-align:left}
   .notes-app :global(*){box-sizing:border-box}.notes-app :global(button),.notes-app :global(input),.notes-app :global(select),.notes-app :global(textarea){font:inherit}.notes-app :global(button){cursor:pointer}.notes-app :global(button:disabled){opacity:.45;cursor:default}.notes-app :global(button:focus-visible),.notes-app :global(input:focus-visible),.notes-app :global(select:focus-visible),.notes-app :global(a:focus-visible){outline:2px solid var(--accent);outline-offset:3px}.notes-app :global(button){color:inherit}.notes-app :global(h1),.notes-app :global(h2),.notes-app :global(p){margin:0}
