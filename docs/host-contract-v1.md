@@ -351,3 +351,12 @@ Speech entry points stay visible when a capability is available but its assets
 are not installed: the dictation icon opens dictation setup and the speaker
 opens read-aloud setup. Dictation is shown only while editing a writable note.
 Read-aloud remains available in view mode and does not require write access.
+
+Notes may retain completed read-aloud paragraphs in memory (at most 24 MiB
+combined), keyed by exact spoken text, voice and speed. Hosts advertising
+`tts.supportsSegments` accept `segments` on synthesis and label returned chunks
+with `segmentIndex`; all missing paragraphs share one worker/model load. Older
+hosts retain whole-reading replay. Notes clears audio on note changes, speech
+settings, flush and unmount; removed paragraphs are dropped on the next reading.
+Partial, failed and oversized paragraphs are not cached. No synthesized audio
+is written to persistent storage.

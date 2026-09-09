@@ -66,6 +66,7 @@ export interface SpeechInstallProgress {
   totalBytes: number;
 }
 export interface SpeechTts {
+  readonly supportsSegments?: boolean;
   getInstallState(): Promise<{model: 'not-installed' | 'installing' | 'ready' | 'error'; modelBytes: {installed: number; total: number}; installedVoices: string[]; defaultVoice: string; error?: string}>;
   installModel(options?: {signal?: AbortSignal; onProgress?: (progress: SpeechInstallProgress) => void}): Promise<void>;
   removeModel(): Promise<void>;
@@ -74,8 +75,8 @@ export interface SpeechTts {
   removeVoice(id: string): Promise<void>;
   getDefaultVoice(): string;
   setDefaultVoice(id: string): void;
-  previewVoice(id: string, options: {signal?: AbortSignal; onProgress?: (progress: {phase: 'loading' | 'synthesizing'; completed: number; total: number}) => void; onChunk: (chunk: {index: number; pcm: ArrayBuffer; sampleRate: 24000; sampleCount: number}) => Promise<void> | void}): Promise<{sampleRate: 24000; chunks: number; sampleCount: number}>;
-  synthesize(options: {text: string; voice?: string; speed?: number; signal?: AbortSignal; onProgress?: (progress: {phase: 'loading' | 'synthesizing'; completed: number; total: number}) => void; onChunk: (chunk: {index: number; pcm: ArrayBuffer; sampleRate: 24000; sampleCount: number}) => Promise<void> | void}): Promise<{sampleRate: 24000; chunks: number; sampleCount: number}>;
+  previewVoice(id: string, options: {signal?: AbortSignal; onProgress?: (progress: {phase: 'loading' | 'synthesizing'; completed: number; total: number}) => void; onChunk: (chunk: {segmentIndex?: number; index: number; pcm: ArrayBuffer; sampleRate: 24000; sampleCount: number}) => Promise<void> | void}): Promise<{sampleRate: 24000; chunks: number; sampleCount: number}>;
+  synthesize(options: {text: string; segments?: string[]; voice?: string; speed?: number; signal?: AbortSignal; onProgress?: (progress: {phase: 'loading' | 'synthesizing'; completed: number; total: number}) => void; onChunk: (chunk: {segmentIndex?: number; index: number; pcm: ArrayBuffer; sampleRate: 24000; sampleCount: number}) => Promise<void> | void}): Promise<{sampleRate: 24000; chunks: number; sampleCount: number}>;
   cancel(): void;
   dispose(): void;
 }

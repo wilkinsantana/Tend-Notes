@@ -2,15 +2,15 @@ import {test, expect, type Page} from '@playwright/test';
 
 async function fixture(page: Page) {
   await page.addInitScript(() => {
-    const state = {installed:false, starts:0, cancelled:0, removed:0, voice:'af_heart', voices:[] as string[], model:false, callbacks:null as any};
-    const tts = {
+    const state = {installed:false, syntheses:0, spoken:[] as string[], batches:[] as string[][], starts:0, cancelled:0, removed:0, voice:'af_heart', voices:[] as string[], model:false, callbacks:null as any};
+    const tts = {supportsSegments:true,
       async getInstallState(){return {model:state.model?'ready':'not-installed',modelBytes:{installed:state.model?100:0,total:100},installedVoices:[...state.voices],defaultVoice:state.voice};},
       listVoices(){return [{id:'af_heart',name:'Heart',locale:'en-US',gender:'female',grade:'A',bytes:100,sha256:''},{id:'af_bella',name:'Bella',locale:'en-US',gender:'female',grade:'A',bytes:100,sha256:''}];},
       async installModel(){state.model=true;},async removeModel(){state.model=false;},
       async installVoice(id:string){state.voices.push(id);},async removeVoice(id:string){state.voices=state.voices.filter(v=>v!==id);},
       getDefaultVoice(){return state.voice;},setDefaultVoice(id:string){state.voice=id;},
       async previewVoice(_id:string,options:any){await options.onChunk({pcm:new Float32Array(2400).buffer,sampleRate:24000});},
-      async synthesize(options:any){await options.onChunk({pcm:new Float32Array(2400).buffer,sampleRate:24000});},cancel(){},dispose(){},
+      async synthesize(options:any){state.syntheses++;state.spoken.push(options.text);const segments=options.segments??[options.text];state.batches.push(segments);for(let i=0;i<segments.length;i++)await options.onChunk({segmentIndex:i,index:i,pcm:new Float32Array(2400).buffer,sampleRate:24000,sampleCount:2400});return {sampleRate:24000,chunks:segments.length,sampleCount:segments.length*2400};},cancel(){},dispose(){},
     };
     Object.assign(window,{speechFixtureState:state,notesSpeechFixture:{version:1,tts,
       async status(){return {installed:state.installed,bytes:58_000_000};},
@@ -106,4 +106,45 @@ test('speech icons are visible before downloads and offer only the selected feat
   await expect(dictate).toHaveCount(0);
   await expect(read).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+
+test('unchanged note replays and only edited paragraphs are synthesized',async({page})=>{
+  await fixture(page);await page.goto('/');
+  await page.getByRole('button',{name:'Device speech settings',exact:true}).click();
+  const setup=page.getByRole('dialog',{name:'Device speech settings'});
+  await setup.getByRole('button',{name:/Download read-aloud model/}).click();
+  await setup.getByRole('button',{name:'Download voice',exact:true}).click();
+  await setup.getByRole('button',{name:'Close speech settings'}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
+  await page.getByRole('textbox',{name:'Note Markdown'}).fill('Alpha paragraph.\n\nBeta paragraph.\n\nCharlie paragraph.');
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  const read=page.getByRole('button',{name:'Read selection or note aloud',exact:true});
+  await read.click();await expect(read).toBeEnabled();
+  await read.click();await expect(read).toBeEnabled();
+  expect(await page.evaluate(()=>(window as any).speechFixtureState.syntheses)).toBe(1);
+  await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
+  await page.getByRole('textbox',{name:'Note Markdown'}).fill('Alpha paragraph.\n\nDelta paragraph.\n\nCharlie paragraph.');
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await read.click();await expect(read).toBeEnabled();
+  expect(await page.evaluate(()=>(window as any).speechFixtureState.syntheses)).toBe(2);
+  expect(await page.evaluate(()=>(window as any).speechFixtureState.batches)).toEqual([['Alpha paragraph.','Beta paragraph.','Charlie paragraph.'],['Delta paragraph.']]);
+});
+
+
+test('highlighting a preview paragraph reads only that text',async({page})=>{
+  await fixture(page);await page.goto('/');
+  await page.getByRole('button',{name:'Device speech settings',exact:true}).click();
+  const setup=page.getByRole('dialog',{name:'Device speech settings'});
+  await setup.getByRole('button',{name:/Download read-aloud model/}).click();
+  await setup.getByRole('button',{name:'Download voice',exact:true}).click();
+  await setup.getByRole('button',{name:'Close speech settings'}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  const paragraph=page.locator('.preview p').first();
+  const expected=await paragraph.innerText();
+  await paragraph.evaluate(node=>{const range=document.createRange();range.selectNodeContents(node);const selection=window.getSelection()!;selection.removeAllRanges();selection.addRange(range);});
+  const read=page.getByRole('button',{name:'Read selection or note aloud',exact:true});
+  await read.click();await expect(read).toBeEnabled();
+  expect(await page.evaluate(()=>(window as any).speechFixtureState.spoken)).toEqual([expected.trim()]);
 });
