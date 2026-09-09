@@ -165,7 +165,7 @@
   {#snippet toolImage()}<button class="icon" aria-label="Attach image" title="Attach image" onclick={() => attach('image')}><ImagePlus size={17}/></button>{/snippet}
   {#snippet toolAudio()}<button class="icon" aria-label="Attach audio" title="Attach audio" onclick={() => attach('audio')}><Mic size={17}/></button>{/snippet}
   {#snippet toolPdf()}<button class="icon" aria-label="Attach PDF" title="Attach PDF" onclick={() => attach('document')}><FileText size={17}/></button>{/snippet}
-  {#if mode !== 'view' && editable}<div class="formatting"><ResponsiveToolbar tools={[toolBold,toolItalic,toolHeading,toolList,toolChecklist,toolQuote,toolCode,toolTable,...(shared.allowAttachments?[toolImage,toolAudio,toolPdf]:[])]}/></div>{/if}
+  {#if mode !== 'view' && editable}<div class="formatting"><ResponsiveToolbar groups={[{label:'Text',tools:[toolBold,toolItalic,toolHeading]},{label:'Lists and quotes',tools:[toolList,toolChecklist,toolQuote]},{label:'Code and tables',tools:[toolCode,toolTable]},...(shared.allowAttachments?[{label:'Insert and attach',tools:[toolImage,toolPdf]},{label:'Audio',tools:[toolAudio]}]:[])]}/></div>{/if}
   {#if localError}<div class="notice" role="alert">{localError}<button onclick={downloadMarkdown}>Download local copy</button><button onclick={reloadShared}>Use shared version</button></div>{/if}
   <main>
     {#if mode === 'view'}<div class="preview"><Preview content={body} {documents} noteId={shared.documentId}/></div>

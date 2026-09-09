@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, tick, type Snippet } from 'svelte';
   import { Ellipsis } from 'lucide-svelte';
-  let { tools }: { tools: Snippet[] } = $props();
+  let { tools = [], groups }: { tools?: Snippet[]; groups?: {label:string; tools:Snippet[]}[] } = $props();
+  const sections = $derived(groups ?? [{label:'Formatting', tools}]);
   let root: HTMLDivElement;
   let measure: HTMLDivElement;
   let trigger = $state<HTMLButtonElement>();
@@ -17,7 +18,7 @@
       used += width + 4; next++;
     }
     count = next;
-    if (next === tools.length) open = false;
+    if (next === sections.length) open = false;
   }
   async function toggle() {open=!open;if(open){await tick();root.querySelector<HTMLElement>('.overflow button:not(:disabled), .overflow select')?.focus();}}
   onMount(() => {
@@ -33,12 +34,13 @@
 </script>
 <svelte:window onkeydown={event=>{if(event.key==='Escape'&&open){open=false;trigger?.focus();}}}/>
 <div class="toolbar" bind:this={root}>
-  <div class="measurement" bind:this={measure} inert aria-hidden="true">{#each tools as tool}<div class="tool">{@render tool()}</div>{/each}</div>
-  <div class="row" role="group" aria-label="Markdown formatting">{#each tools.slice(0,count) as tool}<div class="tool">{@render tool()}</div>{/each}
-    {#if count<tools.length}<button class="more-tools" bind:this={trigger} aria-label="More formatting options" title="More formatting options" aria-expanded={open} onclick={toggle}><Ellipsis size={20}/></button>{/if}
+  <div class="measurement" bind:this={measure} inert aria-hidden="true">{#each sections as section}<div class="tool-frame">{#each section.tools as tool}<div class="tool">{@render tool()}</div>{/each}</div>{/each}</div>
+  <div class="row" role="group" aria-label="Markdown formatting">{#each sections.slice(0,count) as section}<div class="tool-frame" role="group" aria-label={section.label} title={section.label}>{#each section.tools as tool}<div class="tool">{@render tool()}</div>{/each}</div>{/each}
+    {#if count<sections.length}<button class="more-tools" bind:this={trigger} aria-label="More formatting options" title="More formatting options" aria-expanded={open} onclick={toggle}><Ellipsis size={20}/></button>{/if}
   </div>
-  {#if open}<div class="overflow" role="group" aria-label="More formatting options">{#each tools.slice(count) as tool}<div class="tool">{@render tool()}</div>{/each}</div>{/if}
+  {#if open}<div class="overflow" role="group" aria-label="More formatting options">{#each sections.slice(count) as section}<div class="overflow-section"><span class="group-label">{section.label}</span><div class="tool-frame" role="group" aria-label={section.label}>{#each section.tools as tool}<div class="tool">{@render tool()}</div>{/each}</div></div>{/each}</div>{/if}
 </div>
 <style>
 .toolbar{position:relative;min-width:0;width:100%}.row{display:flex;align-items:center;gap:4px;min-height:44px}.tool{display:flex;align-items:center;flex-shrink:0}.measurement{position:absolute;visibility:hidden;pointer-events:none;display:flex;width:max-content;gap:4px;height:0;overflow:hidden}.more-tools{display:grid;place-items:center;width:44px;height:44px;flex-shrink:0;margin-left:auto;border:0;border-radius:7px;background:var(--wash);color:var(--ink)}.overflow{position:absolute;top:calc(100% + 5px);right:0;z-index:9;display:flex;flex-wrap:wrap;gap:6px;padding:12px;max-width:100%;width:max-content;background:var(--paper);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px #0004;max-height:40vh;overflow:auto}
+.tool-frame{display:flex;align-items:center;flex-shrink:0;gap:2px;padding:3px;border:1px solid var(--line);border-radius:9px;background:color-mix(in srgb,var(--wash) 45%,transparent)}.overflow-section{max-width:100%}.overflow .tool-frame{flex-wrap:wrap}.group-label{display:block;padding:0 4px 5px;color:var(--soft);font-size:10px;font-weight:600;letter-spacing:.04em}.overflow{gap:12px;align-items:flex-start}
 </style>
