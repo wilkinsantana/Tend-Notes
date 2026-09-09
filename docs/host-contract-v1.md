@@ -8,12 +8,15 @@ The source contract is typed in `src/host.ts`.
 ## Optional shared-note capability
 
 `documents.sharing.version === 1` adds owner link creation, listing, revocation,
-joining the shared editor, recovery downloads and stopping sharing. QR codes
+joining the shared editor, recovery downloads and stopping sharing. Listing
+includes optional `recoveryDocuments` for recent sessions; `recovery(id, documentId?)`
+can retrieve an exact older incarnation after sharing stops. `currentContent` is
+the canonical copy captured at recovery, not a later private edit. QR codes
 are generated locally through the optional `qr` method. Invitations contain
 secrets in fragments, never API query parameters. Passcodes are not embedded
 in links, QR codes or email drafts.
 
-The package also exports `mountShared(host, container)`, returning an async
+The package also exports asynchronous `mountShared(host, container)`, returning an async
 `unmount()` cleanup. This separate guest presentation uses only the version-one
 interface in `src/sharedHost.ts`: snapshots, exact before/after text changes,
 local undo/redo, composition fences, mapped selections, presence and scoped

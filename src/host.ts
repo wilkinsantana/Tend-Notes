@@ -18,12 +18,12 @@ export interface Backups {
 export interface Documents {
   sharing?: {
     version: 1;
-    list(id: string): Promise<{items:Array<{id:string;permission:'view'|'edit';expiresAt:number;allowAttachments:boolean;revoked?:boolean}>}>;
+    list(id: string): Promise<{items:Array<{id:string;permission:'view'|'edit';expiresAt:number;allowAttachments:boolean;revoked?:boolean}>;recoveryDocuments?:Array<{documentId:string;createdAt:number;status:string}>}>;
     create(id:string,input:{permission:'view'|'edit';passcode:string|null;ttlSeconds:number;allowAttachments:boolean}):Promise<{id:string;secret:string}>;
     revoke(id:string,linkId:string):Promise<unknown>;
     session(id:string):Promise<{session:string}>;
     stop(id:string):Promise<unknown>;
-    recovery(id:string):Promise<{savedContent:string;currentContent:string;candidateContent:string|null;status:string}>;
+    recovery(id:string,documentId?:string):Promise<{savedContent:string;currentContent:string;candidateContent:string|null;status:string}>;
     qr?(url:string):Promise<string>;
   };
   trash?: Trash;

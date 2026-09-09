@@ -327,6 +327,7 @@ edits. Shared guests need an online connection; disconnected open pages retain
 the draft and let you download it. They do not offer offline reload.
 
 **Pause sharing and prepare recovery copies** preserves the last acknowledged
-copy, current saved note and any pending candidate. Download the versions you
+copy, canonical copy captured at recovery and any pending candidate. Select an
+earlier sharing session to retrieve its retained copies after stopping. Download the versions you
 need, stop sharing, reconcile privately, and create a new link to resume.
 Never assume a failed or interrupted save was accepted.
