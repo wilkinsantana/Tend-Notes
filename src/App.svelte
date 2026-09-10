@@ -5,6 +5,7 @@
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import ResponsiveToolbar from './ResponsiveToolbar.svelte';
   import Preview from './Preview.svelte';
+  import { runScopedShortcut } from './scopedShortcuts';
   import BacklinksPanel from './BacklinksPanel.svelte';
   import EditorFind from './EditorFind.svelte';
   import FindHighlights from './FindHighlights.svelte';
@@ -1283,16 +1284,22 @@
     mediaKind = null;
   }
   function shortcuts(event: KeyboardEvent) {
-    if (event.defaultPrevented || event.isComposing || !(event.ctrlKey || event.metaKey)) return;
-    if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind || formulaSelection || linkDialog || dictationOpen || speechSettingsOpen) return;
-    if (event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); void quickCapture(); }
-    if (event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
-    if (event.target !== sourceEditor && !writingSurface?.contains(event.target)) return;
-    if (event.key.toLowerCase() === 'f' && !event.altKey && !event.shiftKey) { event.preventDefault(); if (!findOpen) toggleFind(); else findPanel?.focusQuery(); return; }
-    if (event.key.toLowerCase() === 'z') { event.preventDefault(); applyHistory(event.shiftKey ? 'redo' : 'undo'); return; }
-    if (event.key.toLowerCase() === 'y') { event.preventDefault(); applyHistory('redo'); return; }
-    if (event.key.toLowerCase() === 'b') { event.preventDefault(); format('**', '**'); }
-    if (event.key.toLowerCase() === 'i') { event.preventDefault(); format('*', '*'); }
+    if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind || formulaSelection || linkDialog || dictationOpen || speechSettingsOpen || helpOpen || shareOpen) return;
+    const inEditor = event.target === sourceEditor || !!writingSurface?.contains(event.target);
+    const editable = inEditor && !historyBlocked && mode !== 'preview';
+    const edit = (key: string, before: string, after = '', prefix = false, shift = false, alt = false) => ({key, shift, alt, enabled: editable, run: () => format(before, after, prefix)});
+    runScopedShortcut(event, [
+      {key:'n',shift:true,run:()=>void quickCapture()},
+      {key:'s',run:()=>void save()},
+      {key:'f',enabled:inEditor,run:()=>{if(!findOpen)toggleFind();else findPanel?.focusQuery();}},
+      {key:'z',enabled:editable,run:()=>applyHistory('undo')},
+      {key:'z',shift:true,enabled:editable,run:()=>applyHistory('redo')},
+      {key:'y',enabled:editable,run:()=>applyHistory('redo')},
+      edit('b','**','**'), edit('i','*','*'), edit('x','~~','~~',false,true),
+      edit('k','[','](https://)'), edit('e','`','`'),
+      edit('7','1. ','',true,true), edit('8','- ','',true,true), edit('9','> ','',true,true),
+      edit('1','# ','',true,false,true), edit('2','## ','',true,false,true), edit('3','### ','',true,false,true),
+    ]);
   }
   function leave(event: BeforeUnloadEvent) { if (view?.dirty) { event.preventDefault(); event.returnValue = ''; } }
   function focusDialog(node: HTMLElement) {
@@ -1339,7 +1346,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- Keyboard shortcuts belong to this extension's focused panel. -->
-<div class="notes-app" use:selectionFocus class:sidebar-hidden={!sidebar || focusMode || todoOpen || trashOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="TEND Notes" tabindex="-1">
+<div class="notes-app" data-shortcut-scope use:selectionFocus class:sidebar-hidden={!sidebar || focusMode || todoOpen || trashOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="TEND Notes" tabindex="-1">
   {#if !ready}
     <div class="welcome"><BookOpen size={44}/><h1>TEND Notes</h1><p>Update Tend to use your new notes space.</p><p class="muted">This extension needs Tend’s Documents editing support.</p></div>
   {:else if loading}

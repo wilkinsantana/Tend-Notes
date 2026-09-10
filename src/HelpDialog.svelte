@@ -1,7 +1,7 @@
 <script lang="ts">
   import { BookOpen, HelpCircle, X } from 'lucide-svelte';
   let {onclose}: {onclose:()=>void} = $props();
-  const topics = ['Quick start', 'Writing & tables', 'Voice guide', 'Sharing', 'Offline & PWA', 'Backups', 'Troubleshooting'] as const;
+  const topics = ['Quick start', 'Writing & tables', 'Keyboard shortcuts', 'Voice guide', 'Sharing', 'Offline & PWA', 'Backups', 'Troubleshooting'] as const;
   let topic = $state<typeof topics[number]>('Quick start');
   function focusDialog(node: HTMLElement) {
     const previous = document.activeElement as HTMLElement | null;
@@ -34,6 +34,11 @@
       <h3>What travels with Markdown?</h3><p>Headings, emphasis, lists, links and code are portable. Many Markdown readers also support tables and checklists. Formula rendering and embedded media depend on the destination app.</p>
       <p>Markdown tables store their text and alignment. They have no standard syntax for column widths, row heights, text colors or cell backgrounds. HTML styling is interpreted differently by different readers.</p>
       <p class="tip">Note colors in the list organize your notes; they do not change text color. Draggable table sizing and text/cell colors are planned additions and are not enabled in this version. Their export behavior will be explained here when available.</p>
+    {:else if topic === 'Keyboard shortcuts'}
+      <h3>Keep your hands on the keyboard</h3>
+      <p>Use Ctrl on Windows/Linux or ⌘ on Mac. Formatting shortcuts work only while the Notes editor is focused. They do not run in search fields, dialogs, or other panels.</p>
+      <ul><li><strong>Ctrl/⌘ + B / I:</strong> bold / italic</li><li><strong>Ctrl/⌘ + Shift + X:</strong> strikethrough</li><li><strong>Ctrl/⌘ + K:</strong> insert a link</li><li><strong>Ctrl/⌘ + E:</strong> inline code</li><li><strong>Ctrl/⌘ + Shift + 7 / 8 / 9:</strong> numbered list / bullet list / quotation</li><li><strong>Ctrl/⌘ + Alt + 1 / 2 / 3:</strong> heading level 1 / 2 / 3 (Option on Mac)</li><li><strong>Ctrl/⌘ + Z:</strong> undo</li><li><strong>Ctrl/⌘ + Shift + Z or Ctrl/⌘ + Y:</strong> redo</li><li><strong>Ctrl/⌘ + F:</strong> find in the current editor</li><li><strong>Ctrl/⌘ + S:</strong> save the current note</li><li><strong>Ctrl/⌘ + Shift + N:</strong> quick capture within the focused Notes panel</li></ul>
+      <p class="tip">Select text before formatting, or insert a marker at the cursor. Enter continues a list; Enter on an empty item exits it. Your browser or operating system may reserve some combinations.</p>
     {:else if topic === 'Voice guide'}
       <h3>Three different audio tools</h3><ul><li><strong>Read aloud:</strong> the speaker reads the note or selected text. Pause, resume or stop whenever you like. Follow reading highlights the paragraph in Preview and scrolls it into view; turn it off to browse elsewhere.</li><li><strong>Dictation:</strong> the speaking-person icon turns speech into text while editing. Review the transcript before inserting it.</li><li><strong>Voice note:</strong> the microphone records an audio attachment rather than turning speech into writing.</li></ul>
       <h3>Download only what you need</h3><p>The first use opens setup if a required model is missing. Audio settings let you download, preview, select or remove individual voices. On phones, Phone voices uses the local voices exposed by your browser. Downloaded voices is an optional alternative. Desktop starts with downloaded reading voices. Models and voices belong to this browser or device, not to your notebook.</p>
