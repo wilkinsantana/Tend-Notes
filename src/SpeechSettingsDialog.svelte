@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import { Check, Download, LoaderCircle, Play, Speech as SpeechIcon, Settings2, Trash2, Volume2, X } from 'lucide-svelte';
-  import type { Speech, SpeechInstallProgress, SpeechNativeReading, SpeechNativeSession, SpeechNativeVoice, SpeechTts } from './host';
+  import type { Speech, SpeechInstallProgress, SpeechNativeReading, SpeechNativeSession, SpeechNativeVoice, SpeechTts, SpeechVoice } from './host';
   import { createSpeechPlayback } from './speechPlayback';
   import CreateVoiceDialog from './CreateVoiceDialog.svelte';
 
@@ -26,9 +26,14 @@
   let previewPlayback: ReturnType<typeof createSpeechPlayback> | null = null;
   let nativePreview: SpeechNativeSession | null = null;
   let readingMode = $state<'device'|'download'>(initialReadingMode(speech.tts));
-  let deviceVoices = $state<readonly SpeechNativeVoice[]>([]), selectedDeviceVoice = $state('');
+  let deviceVoices = $state<readonly SpeechNativeVoice[]>([]), selectedDeviceVoice = $state(''), selectedDeviceLanguage = $state('');
+  const deviceLanguages = $derived([...new Set(deviceVoices.map(voice=>voice.lang))]);
+  const visibleDeviceVoices = $derived(deviceVoices.filter(voice=>!selectedDeviceLanguage||voice.lang===selectedDeviceLanguage));
   let nativeLoading = $state(false), nativeError = $state('');
+  let nativeResult = $state('');
   let modeError = $state('');
+  let catalogOpen = $state(false), catalogLoading = $state(false), catalogError = $state('');
+  let libraryState = $state<{ready:boolean;bytes:number;voices:readonly SpeechVoice[]}|null>(null);
   let voiceDialogOpen = $state(false);
   let voiceDialogTrigger = $state<HTMLButtonElement>();
   let alive = true;
@@ -55,14 +60,16 @@
   }
   async function refreshNative() {
     if (!tts || !native) { readingMode = 'download'; deviceVoices = []; onreadingstatus('download', []); return; }
-    nativeLoading = true; nativeError = '';
+    nativeLoading = true; nativeError = ''; nativeResult = '';
     try {
       const voices = await native.refreshVoices();
       if (!alive) return;
       deviceVoices = [...voices]; readingMode = tts.getReadingMode!();
       const saved = tts.getDeviceVoice?.() ?? '';
       selectedDeviceVoice = voices.some(voice => voice.id === saved) ? saved : voices[0]?.id ?? '';
+      selectedDeviceLanguage = voices.find(voice=>voice.id===selectedDeviceVoice)?.lang ?? voices[0]?.lang ?? '';
       if (selectedDeviceVoice && selectedDeviceVoice !== saved) tts.setDeviceVoice?.(selectedDeviceVoice);
+      nativeResult = voices.length ? `${voices.length} local ${native.isMobile?'phone':'device'} ${voices.length===1?'voice':'voices'} found.` : `Checked just now. This browser did not return any local ${native.isMobile?'phone':'device'} voices.`;
     } catch (cause) { if (alive) { deviceVoices = []; try{readingMode=tts.getReadingMode!();}catch{readingMode=native.isMobile?'device':'download';} nativeError = cause instanceof Error ? cause.message : `${native.isMobile?'Phone':'Device'} voices are unavailable. Try again.`; } }
     finally { if (alive) { nativeLoading = false; onreadingstatus(readingMode, deviceVoices); } }
   }
@@ -72,7 +79,7 @@
     try {
       tts.setReadingMode!(mode); readingMode = mode; onreadingstatus(mode, deviceVoices);
       if (mode === 'download') void refreshTts();
-      else { ttsLoading = false; onttsstatus(null); }
+      else { catalogOpen=false; ttsLoading = false; onttsstatus(null); }
     }
     catch (cause) { modeError = cause instanceof Error ? cause.message : 'The reading choice could not be saved.'; }
   }
@@ -80,6 +87,10 @@
     if (!tts || !selectedDeviceVoice || allBusy) return;
     try { tts.setDeviceVoice?.(selectedDeviceVoice); onreadingstatus(readingMode, deviceVoices); }
     catch (cause) { nativeError = cause instanceof Error ? cause.message : `The ${native?.isMobile?'phone':'device'} voice could not be changed.`; }
+  }
+  function setDeviceLanguage(){
+    const next=visibleDeviceVoices[0];selectedDeviceVoice=next?.id??'';
+    if(next)setDeviceVoice();
   }
   function saveTemperature() {
     if (!tts?.setGenerationSettings || allBusy || ttsLoading) return;
@@ -101,10 +112,24 @@
     finally { if (alive) removing = false; }
   }
   function progress(next: SpeechInstallProgress) { if (alive) ttsProgress = next; }
+  async function refreshVoiceLibrary() {
+    if(!tts||readingMode!=='download')return;catalogLoading=true;catalogError='';
+    try{const state=tts.getVoiceLibraryState?await tts.getVoiceLibraryState():{ready:ttsState?.model==='ready',bytes:ttsState?.modelBytes.total??0,voices:[...voices]};if(alive)libraryState=state;}
+    catch(cause){if(alive)catalogError=cause instanceof Error?cause.message:'The voice library could not be refreshed.';}
+    finally{if(alive)catalogLoading=false;}
+  }
+  function toggleCatalog(){catalogOpen=!catalogOpen;if(catalogOpen)void refreshVoiceLibrary();}
+  function chooseCatalogVoice(id:string){if(!voices.some(voice=>voice.id===id))return;selectedVoice=id;ttsError='';}
+  function catalogVoices(){
+    const items=new Map<string,SpeechVoice>();
+    for(const voice of voices)items.set(voice.id,voice);
+    for(const voice of libraryState?.voices??[])items.set(voice.id,voice);
+    return [...items.values()];
+  }
   async function installModel() {
     if (!tts || allBusy) return;
     const request = new AbortController(); ttsController = request; ttsTask = 'model'; ttsProgress = null; ttsError = '';
-    try { await tts.installModel({signal: request.signal, onProgress: progress}); if (alive) await refreshTts(); }
+    try { await tts.installModel({signal: request.signal, onProgress: progress}); if (alive) {await refreshTts();if(catalogOpen)await refreshVoiceLibrary();} }
     catch (cause) { if (alive && !request.signal.aborted) ttsError = cause instanceof Error ? cause.message : 'The reading download could not be installed. Try again.'; }
     finally { if (ttsController === request) { ttsController = null; if (alive) ttsTask = ''; } }
   }
@@ -182,7 +207,7 @@
     <div class="card-title"><div><h3>Local dictation</h3><p>Turn speech into a transcript you review before inserting into a note.</p></div>{#if loading}<LoaderCircle class="spin" size={18}/>{:else if installed}<span class="ready"><Check size={15}/> Ready</span>{/if}</div>
     {#if installing}<div class="progress-copy"><span>Downloading dictation…</span><span>{total ? `${percent}% · ${size(received)} of ${size(total)}` : size(received)}</span></div><progress max={total || 1} value={received}></progress><button onclick={cancelInstall}>Cancel download</button>
     {:else if installed}<p class="details">Uses {size(bytes)} total, including the 45 MB recognition model. Removing it does not change your notes or inserted transcripts.</p><button class="remove" onclick={() => void remove()} disabled={allBusy}>{#if removing}<LoaderCircle class="spin" size={15}/> Removing…{:else}<Trash2 size={15}/> Remove dictation download{/if}</button>
-    {:else if !loading}<p class="details">Downloads {size(bytes)} total, including the 45 MB recognition model. The host verifies all required files before dictation becomes available.</p><button class="primary" onclick={() => void install()} disabled={allBusy}><Download size={15}/> Download local dictation</button>{/if}
+    {:else if !loading}<p class="details">Downloads {size(bytes)} total, including the 45 MB recognition model. The host verifies all required files before dictation becomes available.</p><button class="download-action" onclick={() => void install()} disabled={allBusy}><Download size={15}/> Download local dictation</button>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </div>
   {/if}
@@ -193,14 +218,21 @@
     {#if readingMode === 'download' && tts.privateVoices}<button class="create-voice" bind:this={voiceDialogTrigger} onclick={()=>{stopTts();voiceDialogOpen=true;}} disabled={allBusy || ttsLoading}><SpeechIcon size={15}/> Create my voice</button>{/if}
     {#if readingMode === 'device' && native}
       {#if nativeLoading}<p class="details" role="status">Finding voices already on this {native.isMobile?'phone':'device'}…</p>
-      {:else if deviceVoices.length}<label for="device-voice">{native.isMobile?'Phone':'Device'} voice</label><select id="device-voice" bind:value={selectedDeviceVoice} onchange={setDeviceVoice} disabled={!!ttsTask}>{#each deviceVoices as voice}<option value={voice.id}>{voice.name} · {voice.lang}</option>{/each}</select><div class="voice-actions"><button onclick={() => void previewDeviceVoice()} disabled={!!ttsTask}><Play size={15}/> Preview</button></div>{#if nativeError}<p class="error" role="alert">{nativeError}</p>{/if}
-      {:else}<p class="details">No {native.isMobile?'phone':'device'} voices are available to Notes {native.isMobile?'on this device':'in this browser'}. You can retry, or choose downloaded voices and set one up yourself.</p><div class="voice-actions"><button onclick={() => void refreshNative()} disabled={allBusy}>Try {native.isMobile?'phone':'device'} voices again</button><button class="primary inline-primary" onclick={() => setMode('download')} disabled={allBusy}><Download size={15}/> Set up downloaded voices</button></div>{#if nativeError}<p class="error" role="alert">{nativeError}</p>{/if}{/if}
+      {:else if deviceVoices.length}<div class="voice-fields">{#if deviceLanguages.length>1}<label for="device-language">Language<select id="device-language" bind:value={selectedDeviceLanguage} onchange={setDeviceLanguage} disabled={!!ttsTask}>{#each deviceLanguages as language}<option value={language}>{language}</option>{/each}</select></label>{/if}<label for="device-voice">{native.isMobile?'Phone':'Device'} voice<select id="device-voice" bind:value={selectedDeviceVoice} onchange={setDeviceVoice} disabled={!!ttsTask}>{#each visibleDeviceVoices as voice}<option value={voice.id}>{voice.name} · {voice.lang}</option>{/each}</select></label></div><div class="voice-actions"><button onclick={() => void previewDeviceVoice()} disabled={!!ttsTask}><Play size={15}/> Preview</button></div>{#if nativeResult}<p class="check-result" role="status">{nativeResult}</p>{/if}{#if nativeError}<p class="error" role="alert">{nativeError}</p>{/if}
+      {:else}<p class="details">No {native.isMobile?'phone':'device'} voices are available to Notes {native.isMobile?'on this device':'in this browser'}. Notes can only use local voices that this browser returns.</p><div class="voice-actions empty-actions"><button onclick={() => void refreshNative()} disabled={allBusy}>Retry {native.isMobile?'phone':'device'} voices</button><button onclick={() => setMode('download')} disabled={allBusy}>Use downloaded reading</button></div>{#if nativeResult}<p class="check-result" role="status">{nativeResult}</p>{/if}{#if nativeError}<p class="error" role="alert">{nativeError}</p>{/if}{/if}
     {:else if ttsTask === 'model' || ttsTask === 'voice'}<div class="progress-copy"><span>{ttsProgress?.phase ?? 'Preparing'} {ttsTask === 'voice' ? 'voice' : 'reading download'}…</span><span>{ttsProgress?.totalBytes ? `${ttsPercent}% · ${size(ttsProgress.completedBytes)} of ${size(ttsProgress.totalBytes)}` : ''}</span></div><progress max={ttsProgress?.totalBytes || 1} value={ttsProgress?.completedBytes || 0}></progress><button onclick={cancelTtsDownload}>Cancel download</button>
-    {:else if !ttsLoading && ttsState?.model !== 'ready'}<p class="details">Set up private reading on this device, then choose a voice. Nothing downloads until you ask.</p><button class="primary" onclick={() => void installModel()} disabled={allBusy}><Download size={15}/> Set up reading {ttsState?.modelBytes.total ? `· ${size(ttsState.modelBytes.total)}` : ''}</button>
+    {:else if !ttsLoading && ttsState?.model !== 'ready'}<p class="details">Set up private reading on this device, then choose a voice. Nothing downloads until you ask.</p><button class="download-action" onclick={() => void installModel()} disabled={allBusy}><Download size={15}/> Set up reading {ttsState?.modelBytes.total ? `· ${size(ttsState.modelBytes.total)}` : ''}</button>
     {:else if ttsState?.model === 'ready'}
-      <label for="speech-voice">Voice</label><select id="speech-voice" bind:value={selectedVoice} disabled={!!ttsTask}>{#each voices as voice}<option value={voice.id}>{voice.name} · {voice.locale} · {voice.grade}{ttsState.installedVoices.includes(voice.id) ? ' · downloaded' : ''}</option>{/each}</select>
-      {#if chosenVoice}<p class="details">{chosenVoice.personal ? chosenVoice.grade : `${chosenVoice.gender === 'female' ? 'Female' : 'Male'} · ${size(chosenVoice.bytes)}`}{ttsState.defaultVoice === chosenVoice.id ? ' · default voice' : ''}</p>{/if}
-      <div class="voice-actions">{#if voiceInstalled}<button onclick={() => void previewVoice()} disabled={!!ttsTask}><Play size={15}/> Preview</button><button onclick={setDefault} disabled={!!ttsTask || ttsState.defaultVoice === selectedVoice}><Check size={15}/> Use by default</button>{#if !chosenVoice?.personal}<button class="remove" onclick={() => void removeVoice()} disabled={!!ttsTask}><Trash2 size={15}/> Remove voice</button>{/if}{:else}<button class="primary" onclick={() => void installVoice()} disabled={!selectedVoice || !!ttsTask}><Download size={15}/> Download voice</button>{/if}</div>
+      <div class="voice-library-head"><div><h4>Downloaded voice</h4><p>Choose one here, or browse the full voice library.</p></div><button aria-expanded={catalogOpen} aria-controls="voice-catalog" onclick={toggleCatalog} disabled={blockingBusy}>{catalogOpen?'Hide voices':'Browse voices'}</button></div>
+      <div class="voice-fields"><label for="speech-language">Language<select id="speech-language" disabled><option>English</option></select><small>English is the only downloaded language currently supported.</small></label><label for="speech-voice">Choose a voice<select id="speech-voice" bind:value={selectedVoice} disabled={!!ttsTask}>{#each voices as voice}<option value={voice.id}>{voice.name} · {voice.locale} · {ttsState.installedVoices.includes(voice.id) ? 'Downloaded' : 'Available'}</option>{/each}</select></label></div>
+      {#if catalogOpen}<div id="voice-catalog" class="voice-catalog" role="region" aria-label="Voice library"><div class="catalog-head"><strong>Voice library</strong><button onclick={()=>void refreshVoiceLibrary()} disabled={catalogLoading||blockingBusy}>{#if catalogLoading}<LoaderCircle class="spin" size={14}/>{/if} Refresh list</button></div>
+        {#if catalogError}<p class="error" role="alert">{catalogError}</p>{:else if catalogLoading && !libraryState}<p class="details" role="status">Checking available voices…</p>{:else if libraryState}
+          {#if !libraryState.ready}<div class="library-setup"><div><strong>More voices are ready to browse</strong><p>Prepare the current voice library once. Your existing reading download stays in place.</p></div><button class="download-action inline-primary" onclick={()=>void installModel()} disabled={allBusy}><Download size={15}/> Prepare voice library{libraryState.bytes?` · ${size(libraryState.bytes)}`:''}</button></div>{/if}
+          <div class="catalog-list">{#each catalogVoices() as voice (voice.id)}{@const downloaded=ttsState.installedVoices.includes(voice.id)}<button class="catalog-voice" class:selected={selectedVoice===voice.id} aria-pressed={selectedVoice===voice.id} onclick={()=>chooseCatalogVoice(voice.id)} disabled={!voices.some(item=>item.id===voice.id)||!!ttsTask}><span><strong>{voice.name}</strong><small>{voice.locale}</small></span><em class:downloaded>{voice.personal?'Personal':downloaded?'Downloaded':'Available'}</em></button>{/each}</div>
+        {/if}
+      </div>{/if}
+      {#if chosenVoice}<p class="details">{chosenVoice.personal ? chosenVoice.grade : voiceInstalled ? 'Downloaded voice' : 'Available to download'}{ttsState.defaultVoice === chosenVoice.id ? ' · default voice' : ''}</p>{/if}
+      <div class="voice-actions">{#if voiceInstalled}<button onclick={() => void previewVoice()} disabled={!!ttsTask}><Play size={15}/> Preview</button><button onclick={setDefault} disabled={!!ttsTask || ttsState.defaultVoice === selectedVoice}><Check size={15}/> Use by default</button>{#if !chosenVoice?.personal}<button class="remove" onclick={() => void removeVoice()} disabled={!!ttsTask}><Trash2 size={15}/> Remove voice</button>{/if}{:else}<button class="download-action inline-primary" onclick={() => void installVoice()} disabled={!selectedVoice || !!ttsTask}><Download size={15}/> Download voice</button>{/if}</div>
       <button class="remove model-remove" onclick={() => void removeModel()} disabled={!!ttsTask}><Trash2 size={15}/> Remove reading download</button>
     {/if}
     {#if ttsTask === 'preview'}<button class="stop-preview" onclick={() => stopTts()}><Volume2 size={15}/> Stop preview</button>{/if}
@@ -211,6 +243,6 @@
 </div>{#if voiceDialogOpen && tts?.privateVoices}<CreateVoiceDialog tts={tts} api={tts.privateVoices} onchanged={privateVoiceChanged} onclose={closeVoiceDialog}/>{/if}</div>
 
 <style>
-  .advanced{margin-top:14px;font-size:12px}.advanced summary{cursor:pointer;padding:8px 0}.advanced input{width:100%;min-height:32px;accent-color:var(--accent)}.reading-modes{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:16px;padding:4px;border-radius:9px;background:var(--paper)}.reading-modes button{border-color:transparent;background:transparent}.reading-modes button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}.switch-hint{margin-top:7px}.inline-primary{margin-top:0}.create-voice{margin-top:12px}
-  .speech-layer{position:absolute;inset:0;z-index:40;padding:16px;display:grid;place-items:center;background:color-mix(in srgb,var(--paper) 68%,transparent);backdrop-filter:blur(3px)}.speech-dialog{width:min(540px,100%);max-height:100%;overflow:auto;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:15px;padding:22px;box-shadow:0 20px 70px #0004}header,.card-title{display:flex;align-items:flex-start;gap:12px}header>div,.card-title>div{flex:1;min-width:0}h2,h3,p{margin:0}h2{display:flex;align-items:center;gap:8px;font-size:19px}h3{font-size:14px}header p,.card-title p,.details,small{color:var(--soft);font-size:11px;line-height:1.65;margin-top:5px}.close{margin-left:auto;border:0;background:none;color:var(--ink);width:44px;height:44px}.speech-card{margin:20px 0 14px;padding:17px;background:var(--wash);border:1px solid var(--line);border-radius:11px}.ready{display:inline-flex;align-items:center;gap:5px;color:var(--accent);font-size:11px;white-space:nowrap}.progress-copy{display:flex;justify-content:space-between;gap:12px;margin-top:16px;color:var(--soft);font-size:10px}.progress-copy span:last-child{text-align:right}progress{display:block;width:100%;height:8px;margin:9px 0 13px;accent-color:var(--accent)}label{display:block;margin-top:14px;font-size:11px}select{display:block;width:100%;margin-top:6px;padding:10px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:7px}button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line);border-radius:7px;padding:9px 12px;background:var(--paper);color:var(--ink);font-size:11px}.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;margin-top:13px}.remove{color:var(--danger)}.speech-card>.remove,.model-remove,.stop-preview{margin-top:13px}.voice-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.error{color:var(--danger);font-size:11px;line-height:1.5;margin-top:13px}button:disabled{opacity:.45}:global(.spin){animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){:global(.spin){animation:none}}@container(max-width:520px){.speech-layer{padding:8px}.speech-dialog{padding:17px}select{font-size:16px}button{min-height:44px}.progress-copy{display:block}.progress-copy span{display:block;text-align:left!important}.voice-actions button{flex:1}}
+  .advanced{margin-top:14px;font-size:12px}.advanced summary{cursor:pointer;padding:8px 0}.advanced input{width:100%;min-height:32px;accent-color:var(--accent)}.reading-modes{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:16px;padding:4px;border:1px solid var(--line);border-radius:9px;background:var(--wash)}.reading-modes button{border-color:transparent;background:transparent}.reading-modes button[aria-pressed="true"]{border-color:var(--line);background:var(--paper);color:var(--ink);box-shadow:0 1px 3px #0002}.switch-hint{margin-top:7px}.inline-primary{margin-top:0}.create-voice{margin-top:12px}.voice-library-head,.catalog-head,.library-setup{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.voice-library-head h4{margin:0;font-size:12px}.voice-library-head p,.library-setup p{margin:2px 0 0;color:var(--soft);font-size:10px;line-height:1.45}.voice-fields{display:grid;grid-template-columns:minmax(0,.7fr) minmax(0,1.3fr);gap:10px}.voice-fields label{min-width:0}.voice-fields small{display:block;margin-top:5px;color:var(--soft);font-size:9px;line-height:1.4}.voice-catalog{margin-top:10px;padding:11px;border:1px solid var(--line);border-radius:9px;background:var(--paper)}.catalog-head{margin:0}.catalog-list{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}.catalog-voice{justify-content:space-between;text-align:left}.catalog-voice>span{display:grid;min-width:0}.catalog-voice small{color:var(--soft);font-size:9px;overflow:hidden;text-overflow:ellipsis}.catalog-voice em{font-style:normal;color:var(--soft);font-size:9px}.catalog-voice em.downloaded,.catalog-voice.selected{color:var(--accent)}.library-setup{align-items:flex-start;padding:10px;border-radius:8px;background:var(--wash)}
+  .speech-layer{position:absolute;inset:0;z-index:40;padding:16px;display:grid;place-items:center;background:color-mix(in srgb,var(--paper) 68%,transparent);backdrop-filter:blur(3px)}.speech-dialog{width:min(540px,100%);max-height:100%;overflow:auto;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:15px;padding:22px;box-shadow:0 20px 70px #0004}header,.card-title{display:flex;align-items:flex-start;gap:12px}header>div,.card-title>div{flex:1;min-width:0}h2,h3,p{margin:0}h2{display:flex;align-items:center;gap:8px;font-size:19px}h3{font-size:14px}header p,.card-title p,.details,small{color:var(--soft);font-size:11px;line-height:1.65;margin-top:5px}.close{margin-left:auto;border:0;background:none;color:var(--ink);width:44px;height:44px}.speech-card{margin:20px 0 14px;padding:17px;background:var(--wash);border:1px solid var(--line);border-radius:11px}.ready{display:inline-flex;align-items:center;gap:5px;color:var(--accent);font-size:11px;white-space:nowrap}.progress-copy{display:flex;justify-content:space-between;gap:12px;margin-top:16px;color:var(--soft);font-size:10px}.progress-copy span:last-child{text-align:right}progress{display:block;width:100%;height:8px;margin:9px 0 13px;accent-color:var(--accent)}label{display:block;margin-top:14px;font-size:11px}select{box-sizing:border-box;display:block;width:100%;min-height:44px;margin-top:6px;padding:10px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:7px}button{display:inline-flex;align-items:center;justify-content:center;gap:7px;box-sizing:border-box;min-height:44px;border:1px solid var(--line);border-radius:7px;padding:9px 12px;background:var(--paper);color:var(--ink);font-size:11px}.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;margin-top:13px}.download-action{margin-top:13px;border-color:color-mix(in srgb,var(--warning,#d7ac64) 72%,var(--ink));background:var(--warning,#d7ac64);color:var(--color-warning-content,#211704)}.check-result{margin-top:9px;color:var(--soft);font-size:10px;line-height:1.45}.remove{color:var(--danger)}.speech-card>.remove,.model-remove,.stop-preview{margin-top:13px}.voice-actions{display:flex;align-items:stretch;gap:7px;flex-wrap:wrap;margin-top:12px}.voice-actions button{min-height:44px}.empty-actions>button{flex:1;height:44px;max-height:44px;padding-inline:8px;font-size:10px;white-space:nowrap}.error{color:var(--danger);font-size:11px;line-height:1.5;margin-top:13px}button:disabled{opacity:.45}:global(.spin){animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){:global(.spin){animation:none}}@container(max-width:520px){.speech-layer{padding:8px}.speech-dialog{padding:17px}select{font-size:16px}.voice-fields,.catalog-list{grid-template-columns:1fr}.voice-library-head,.library-setup{align-items:stretch;flex-direction:column}.voice-library-head button,.library-setup button{width:100%;min-height:44px}.progress-copy{display:block}.progress-copy span{display:block;text-align:left!important}.voice-actions button{flex:1}}
 </style>

@@ -414,3 +414,11 @@ may require an explicit newer runtime download; updating Notes alone never
 starts that transfer. Downloaded English voices are individual immutable assets.
 Other downloaded languages and pre-install preview clips are not implied by this
 contract.
+
+Optional `tts.getVoiceLibraryState()` returns `{ready, bytes, voices}` for the
+expanded downloaded library without changing the active voice or downloading
+assets. Notes calls it only on explicit library discovery. Setup uses the
+existing `installModel` action after displaying its size; individual voice
+downloads remain explicit. Hosts without discovery retain the ordinary picker.
+Language filtering must reflect actual catalog/native voice languages, never
+relabel an English model as multilingual.

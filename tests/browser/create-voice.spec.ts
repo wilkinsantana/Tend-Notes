@@ -46,12 +46,12 @@ test('personal voice upload stays explicit, previews from memory, and joins down
   await expect(dialog.getByText('Warm sample is ready on this device.')).toBeVisible();
   expect(await page.evaluate(()=>(window as any).createVoiceState)).toMatchObject({prepareCalls:0,createCalls:1,wavHeader:'RIFF',samplePreviews:1});
   await dialog.getByRole('button',{name:'Close Create my voice'}).click();const settings=page.getByRole('dialog',{name:'Device speech settings'});await expect(settings.getByRole('button',{name:'Create my voice',exact:true})).toBeFocused();
-  await expect(settings.getByLabel('Voice',{exact:true})).toHaveValue('personal-1');await expect(settings.getByText('Personal voice · this device',{exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await expect(settings.getByRole('combobox',{name:'Choose a voice',exact:true})).toHaveValue('personal-1');await expect(settings.getByText('Personal voice · this device',{exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await settings.getByRole('button',{name:'Preview',exact:true}).click();await settings.getByRole('button',{name:'Use by default',exact:true}).click();
   expect(await page.evaluate(()=>(window as any).createVoiceState)).toMatchObject({previewIds:['personal-1'],defaultVoice:'personal-1'});
   await settings.getByRole('button',{name:'Create my voice',exact:true}).click();const manage=page.getByRole('dialog',{name:'Create my voice'});await manage.getByRole('button',{name:'Remove',exact:true}).click();
   const confirmation=manage.getByLabel('Type Warm sample to confirm');await confirmation.fill('Warm sample');await manage.getByRole('button',{name:'Remove Warm sample'}).click();await expect(manage.getByText('Warm sample',{exact:true})).toHaveCount(0);
-  expect(await page.evaluate(()=>(window as any).createVoiceState.removeCalls)).toBe(1);await manage.getByRole('button',{name:'Close Create my voice'}).click();await expect(settings.getByLabel('Voice',{exact:true})).toHaveValue('marius');
+  expect(await page.evaluate(()=>(window as any).createVoiceState.removeCalls)).toBe(1);await manage.getByRole('button',{name:'Close Create my voice'}).click();await expect(settings.getByRole('combobox',{name:'Choose a voice',exact:true})).toHaveValue('marius');
 });
 
 test('preparation and processing start only on request and processing can be cancelled',async({page})=>{
@@ -91,3 +91,17 @@ test('closing during microphone teardown cannot recreate a raw sample or start a
   await expect(dialog).toHaveCount(0);
   expect(await page.evaluate(()=>(window as any).createVoiceState)).toMatchObject({objectUrls:before,trackStops:1,contextCloses:1,createCalls:0});
 });
+
+for (const width of [390, 1100]) {
+  test(`recording guidance and aligned controls at ${width}px`, async ({page}, testInfo) => {
+    await page.setViewportSize({width,height:950});await fixture(page);const dialog=await openCreate(page);
+    await expect(dialog.getByLabel('Sample language')).toHaveValue('English');
+    await expect(dialog.getByText('Read this in your natural voice')).toBeVisible();
+    await expect(dialog.getByText(/Find a quiet place/)).toBeVisible();
+    const record=await dialog.getByRole('button',{name:'Record sample'}).boundingBox();
+    const upload=await dialog.getByRole('button',{name:'Upload WAV'}).boundingBox();
+    expect(record!.height).toBe(44);expect(upload!.height).toBe(44);expect(record!.y).toBe(upload!.y);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await dialog.screenshot({path:testInfo.outputPath('voice-onboarding.png')});
+  });
+}

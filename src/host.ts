@@ -107,6 +107,7 @@ export interface SpeechTts {
   readonly supportsSegments?: boolean;
   readonly native?: SpeechNativeReading;
   readonly privateVoices?: SpeechPrivateVoices;
+  getVoiceLibraryState?(): Promise<{ready: boolean; bytes: number; voices: readonly SpeechVoice[]}>;
   getReadingMode?(): 'device' | 'download';
   setReadingMode?(mode: 'device' | 'download'): void;
   getDeviceVoice?(): string;
