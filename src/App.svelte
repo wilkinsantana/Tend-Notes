@@ -399,9 +399,9 @@
     speechInstalled = status.installed;
   }
   function setTtsStatus(status: TtsInstallState | null) { ttsState = status; }
-  function mobileNative(tts: SpeechTts | undefined): SpeechNativeReading | null {
+  function deviceNative(tts: SpeechTts | undefined): SpeechNativeReading | null {
     const native = tts?.native;
-    return native?.isMobile ? native : null;
+    return native && typeof tts?.getReadingMode === 'function' && typeof tts.setReadingMode === 'function' ? native : null;
   }
   function setReadingStatus(mode: 'device'|'download', voices: readonly SpeechNativeVoice[]) {
     readingMode = mode; nativeVoices = [...voices];
@@ -415,7 +415,7 @@
       if (alive && host.speech === speech) setSpeechStatus(status);
     } catch { /* Device speech settings exposes a retry without interrupting Notes. */ }
     const tts = speech.tts;
-    const native = mobileNative(tts);
+    const native = deviceNative(tts);
     let resolvedMode: 'device'|'download' = native ? (tts?.getReadingMode?.() ?? 'device') : 'download';
     try {
       if (tts && native) {
@@ -534,7 +534,7 @@
     const paragraphs = speechReplayParagraphs(tts, text);
     const highlight = scope !== 'Selected text';
     readController = request; readTargetId = targetId; readTargetBody = editorBody; readScope = scope; readPhase = 'starting'; readError = ''; readProgress = {completed: 0, total: 0}; readParagraphs = highlight ? paragraphs : [];
-    const native = readingMode === 'device' ? mobileNative(tts) : null;
+    const native = readingMode === 'device' ? deviceNative(tts) : null;
     if (native) {
       try {
         const configuredVoice = tts.getDeviceVoice?.() ?? '';

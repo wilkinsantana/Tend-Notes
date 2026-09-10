@@ -1,12 +1,12 @@
 import {test, expect, type Page} from '@playwright/test';
 
-type FixtureOptions = {mobile: boolean; phoneVoices?: Array<{id:string;name:string;lang:string}>; mode?: 'device'|'download'; downloadedReady?: boolean};
+type FixtureOptions = {mobile: boolean; phoneVoices?: Array<{id:string;name:string;lang:string}>; mode?: 'device'|'download'; downloadedReady?: boolean; rejectDevice?: boolean};
 
 async function readingFixture(page: Page, options: FixtureOptions) {
   await page.addInitScript(config => {
-    const state = {mode:config.mode ?? (config.mobile?'device':'download'), deviceVoice:'', refreshes:0, statusCalls:0, downloadedVoiceReads:0, generationReads:0, starts:[] as Array<{segments:string[];voice?:string}>, pauses:0, resumes:0, stops:0, aborts:0, nativeDisposed:0, modelInstalls:0, voiceInstalls:0, syntheses:0};
+    const state = {mode:config.mode ?? (config.mobile?'device':'download'), deviceVoice:'', refreshes:0, statusCalls:0, downloadedVoiceReads:0, generationReads:0, starts:[] as Array<{segments:string[];voice?:string}>, pauses:0, resumes:0, stops:0, aborts:0, nativeDisposed:0, modelInstalls:0, modelRemoves:0, voiceInstalls:0, voiceRemoves:0, syntheses:0};
     const phoneVoices=config.phoneVoices ?? [];
-    const downloaded=[{id:'marius',name:'Marius',locale:'en-US',gender:'male',grade:'A',bytes:100,sha256:''}];
+    const downloaded=[{id:'marius',name:'Marius',locale:'en-US',gender:'male',grade:'A',bytes:100,sha256:''},{id:'alba',name:'Alba',locale:'en-GB',gender:'female',grade:'A',bytes:100,sha256:''}];
     let active:{finish:()=>void;options:any;stopped:boolean}|null=null;
     const native={isMobile:config.mobile,
       async refreshVoices(){state.refreshes++;return phoneVoices;},listVoices(){return phoneVoices;},
@@ -16,10 +16,10 @@ async function readingFixture(page: Page, options: FixtureOptions) {
         return {done,async pause(){state.pauses++;read.onSegment?.(null);read.onState?.('paused');},async resume(){state.resumes++;read.onState?.('playing');read.onSegment?.(0);},stop};
       },dispose(){state.nativeDisposed++;},
     };
-    const tts={supportsSegments:true,native,
-      getReadingMode(){return state.mode;},setReadingMode(mode:'device'|'download'){state.mode=mode;},getDeviceVoice(){return state.deviceVoice;},setDeviceVoice(id:string){state.deviceVoice=id;},
-      async getInstallState(){state.statusCalls++;return {model:config.downloadedReady?'ready':'not-installed',modelBytes:{installed:config.downloadedReady?100:0,total:100},installedVoices:config.downloadedReady?['marius']:[],defaultVoice:'marius'};},
-      listVoices(){state.downloadedVoiceReads++;return downloaded;},getGenerationSettings(){state.generationReads++;return {temperature:.7};},async installModel(){state.modelInstalls++;config.downloadedReady=true;},async removeModel(){},async installVoice(){state.voiceInstalls++;},async removeVoice(){},getDefaultVoice(){return 'marius';},setDefaultVoice(){},
+    const tts:any={supportsSegments:true,native,
+      getReadingMode(){return state.mode;},setReadingMode(mode:'device'|'download'){if(config.rejectDevice&&mode==='device')throw Error('Device voices need a newer host.');state.mode=mode;},getDeviceVoice(){return state.deviceVoice;},setDeviceVoice(id:string){state.deviceVoice=id;},
+      async getInstallState(){state.statusCalls++;return {model:config.downloadedReady?'ready':'not-installed',modelBytes:{installed:config.downloadedReady?100:0,total:100},installedVoices:config.downloadedReady?downloaded.map(voice=>voice.id):[],defaultVoice:'marius'};},
+      listVoices(){state.downloadedVoiceReads++;return downloaded;},getGenerationSettings(){state.generationReads++;return {temperature:.7};},async installModel(){state.modelInstalls++;config.downloadedReady=true;},async removeModel(){state.modelRemoves++;},async installVoice(){state.voiceInstalls++;},async removeVoice(){state.voiceRemoves++;},getDefaultVoice(){return 'marius';},setDefaultVoice(){},
       async previewVoice(){return {sampleRate:24000 as const,chunks:0,sampleCount:0};},async synthesize(){state.syntheses++;return {sampleRate:24000 as const,chunks:0,sampleCount:0};},cancel(){},dispose(){},
     };
     Object.assign(window,{nativeReadingState:state,nativeReadingControl:{finish(){active?.finish();}},notesSpeechFixture:{version:1,tts,
@@ -73,13 +73,21 @@ test('native reading owns pause resume stop and paragraph follow callbacks',asyn
   await expect(page.locator('[data-notes-reading]')).toHaveCount(0);
 });
 
-test('desktop keeps downloaded reading without a mode or engine selector',async({page})=>{
+test('desktop switches between device and downloaded voices without changing downloads or selections',async({page})=>{
   await readingFixture(page,{mobile:false,phoneVoices:[{id:'system',name:'System voice',lang:'en-US'}],mode:'download',downloadedReady:true});await page.goto('/');
   const settings=await openSettings(page);
-  await expect(settings.getByRole('group',{name:'Reading voices'})).toHaveCount(0);
-  await expect(settings.getByLabel('Voice',{exact:true})).toHaveValue('marius');
+  await expect(settings.getByRole('button',{name:'Device voices'})).toHaveAttribute('aria-pressed','false');await expect(settings.getByRole('button',{name:'Downloaded voices'})).toHaveAttribute('aria-pressed','true');
+  await expect(settings.getByText('Switching changes which voices Notes uses. Existing downloads stay on this device.')).toBeVisible();await settings.getByLabel('Voice',{exact:true}).selectOption('alba');
+  await settings.getByRole('button',{name:'Device voices'}).click();await expect(settings.getByLabel('Device voice')).toHaveValue('system');await settings.getByRole('button',{name:'Preview',exact:true}).click();await settings.getByRole('button',{name:'Downloaded voices'}).click();
+  await expect(settings.getByLabel('Voice',{exact:true})).toHaveValue('alba');
   await expect(settings.getByLabel('Engine',{exact:true})).toHaveCount(0);
-  expect(await page.evaluate(()=>(window as any).nativeReadingState)).toMatchObject({statusCalls:2,modelInstalls:0,voiceInstalls:0,starts:[]});
+  expect(await page.evaluate(()=>(window as any).nativeReadingState)).toMatchObject({mode:'download',stops:1,aborts:1,modelInstalls:0,modelRemoves:0,voiceInstalls:0,voiceRemoves:0});
+  await settings.getByRole('button',{name:'Device voices'}).click();await settings.getByRole('button',{name:'Close speech settings'}).click();await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();await page.getByRole('button',{name:'Read selection or note aloud',exact:true}).click();await expect(page.locator('[data-notes-reading]')).toHaveCount(1);expect(await page.evaluate(()=>(window as any).nativeReadingState.starts.length)).toBe(2);await page.getByRole('button',{name:'Stop read aloud'}).click();
+});
+
+test('a host rejection keeps downloaded mode selected and explains the failure',async({page})=>{
+  await readingFixture(page,{mobile:false,phoneVoices:[{id:'system',name:'System voice',lang:'en-US'}],mode:'download',downloadedReady:true,rejectDevice:true});await page.goto('/');const settings=await openSettings(page);await settings.getByRole('button',{name:'Device voices'}).click();
+  await expect(settings.getByRole('alert')).toHaveText('Device voices need a newer host.');await expect(settings.getByRole('button',{name:'Downloaded voices'})).toHaveAttribute('aria-pressed','true');expect(await page.evaluate(()=>(window as any).nativeReadingState.mode)).toBe('download');
 });
 
 test('mobile with no phone voices offers a clear downloaded setup without starting it',async({page})=>{
