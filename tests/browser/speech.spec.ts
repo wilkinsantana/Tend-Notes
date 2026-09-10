@@ -68,7 +68,7 @@ test('downloaded voice settings install voices separately and select a default',
   await expect(settings.getByRole('button',{name:'Download voice',exact:true})).toBeVisible();
   await settings.getByRole('button',{name:'Download voice',exact:true}).click();
   await expect(settings.getByRole('button',{name:'Preview',exact:true})).toBeVisible();
-  await settings.getByLabel('Voice',{exact:true}).selectOption('af_bella');
+  await settings.getByRole('combobox',{name:'Choose a voice',exact:true}).selectOption('af_bella');
   await settings.getByRole('button',{name:'Download voice',exact:true}).click();
   await settings.getByRole('button',{name:'Use by default',exact:true}).click();
   expect(await page.evaluate(()=>(window as any).speechFixtureState.voice)).toBe('af_bella');
