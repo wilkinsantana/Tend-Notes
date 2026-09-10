@@ -15,6 +15,13 @@ test('replays identical text without synthesis and invalidates voice, speed and 
   await cache.speak(f.tts,{...options,text:'Changed.',voice:'bf_emma',speed:1.2});expect(f.calls()).toBe(4);
   cache.clear();await cache.speak(f.tts,options);expect(f.calls()).toBe(5);
 });
+test('includes host generation settings in the replay cache key',async()=>{
+  const f=fixture(), cache=new SpeechReplay();let generation='temperature:.7';
+  f.tts.getCacheKey=()=>generation;
+  const options={text:'Hello.',onChunk:async()=>{}};
+  await cache.speak(f.tts,options);await cache.speak(f.tts,options);expect(f.calls()).toBe(1);
+  generation='temperature:.9';await cache.speak(f.tts,options);expect(f.calls()).toBe(2);
+});
 test('oversized readings and failed playback are never cached',async()=>{
   const f=fixture(), cache=new SpeechReplay(4), options={text:'Hello.',onChunk:async()=>{}};
   await cache.speak(f.tts,options);await cache.speak(f.tts,options);expect(f.calls()).toBe(2);
@@ -41,14 +48,15 @@ test('synthesizes only changed paragraphs in one batch and preserves current ord
     for(let i=0;i<o.segments.length;i++) await o.onChunk({segmentIndex:i,index:i,pcm:new Float32Array([o.segments[i].charCodeAt(0)]).buffer,sampleRate:24000,sampleCount:1});
     return {sampleRate:24000,chunks:o.segments.length,sampleCount:o.segments.length};
   }} as SpeechTts;
-  const cache=new SpeechReplay();let spoken:number[]=[];
-  const onChunk=async(c:any)=>{spoken.push(new Float32Array(c.pcm)[0]);};
+  const cache=new SpeechReplay();let spoken:number[]=[], paragraphIndexes:number[]=[];
+  const onChunk=async(c:any)=>{spoken.push(new Float32Array(c.pcm)[0]);paragraphIndexes.push(c.segmentIndex);};
   await cache.speak(tts,{text:'Alpha\nBeta\nCharlie',onChunk});
   await cache.speak(tts,{text:'Alpha',onChunk},true);
   expect(batches).toHaveLength(1);
-  spoken=[];await cache.speak(tts,{text:'Alpha\nDelta\nCharlie',onChunk});
+  spoken=[];paragraphIndexes=[];await cache.speak(tts,{text:'Alpha\nDelta\nCharlie',onChunk});
   expect(batches).toEqual([['Alpha','Beta','Charlie'],['Delta']]);
   expect(spoken).toEqual([65,68,67]);
+  expect(paragraphIndexes).toEqual([0,1,2]);
   spoken=[];await cache.speak(tts,{text:'Charlie\nAlpha\nCharlie',onChunk});
   expect(batches).toHaveLength(2);expect(spoken).toEqual([67,65,67]);
 });

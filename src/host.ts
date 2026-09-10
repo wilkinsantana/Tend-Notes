@@ -57,6 +57,7 @@ export interface SpeechVoice {
   grade: string;
   bytes: number;
   sha256: string;
+  personal?: boolean;
 }
 export interface SpeechInstallProgress {
   phase: 'checking' | 'downloading' | 'verifying' | 'caching' | 'complete';
@@ -65,11 +66,57 @@ export interface SpeechInstallProgress {
   completedBytes: number;
   totalBytes: number;
 }
+export interface SpeechNativeVoice {
+  id: string;
+  name: string;
+  lang: string;
+}
+export interface SpeechNativeSession {
+  done: Promise<void>;
+  pause(): Promise<void>;
+  resume(): Promise<void>;
+  stop(): void;
+}
+export interface SpeechNativeReading {
+  readonly isMobile: boolean;
+  refreshVoices(): Promise<readonly SpeechNativeVoice[]>;
+  listVoices(): readonly SpeechNativeVoice[];
+  start(options: {
+    segments: string[];
+    voice?: string;
+    signal?: AbortSignal;
+    onSegment?: (index: number | null) => void;
+    onState?: (state: 'playing' | 'paused' | 'stopped') => void;
+  }): SpeechNativeSession;
+  dispose(): void;
+}
+export interface SpeechPrivateVoice {
+  id: string;
+  label: string;
+  language: string;
+  createdAt: number;
+}
+export interface SpeechPrivateVoices {
+  list(): Promise<readonly SpeechPrivateVoice[]>;
+  getSetupState(): Promise<{model: 'not-installed' | 'installing' | 'ready' | 'error'; modelBytes: {installed: number; total: number}; installedVoices: string[]; defaultVoice: string; error?: string}>;
+  prepare(options?: {signal?: AbortSignal; onProgress?: (progress: SpeechInstallProgress) => void}): Promise<void>;
+  create(input: {label: string; wav: ArrayBuffer; signal?: AbortSignal}): Promise<SpeechPrivateVoice>;
+  remove(id: string): Promise<void>;
+}
 export interface SpeechTts {
   readonly supportsSegments?: boolean;
+  readonly native?: SpeechNativeReading;
+  readonly privateVoices?: SpeechPrivateVoices;
+  getReadingMode?(): 'device' | 'download';
+  setReadingMode?(mode: 'device' | 'download'): void;
+  getDeviceVoice?(): string;
+  setDeviceVoice?(id: string): void;
   listEngines?(): readonly {id: string; name: string; description: string}[];
   getEngine?(): string;
   setEngine?(id: string): void;
+  getGenerationSettings?(): {temperature: number} | null;
+  setGenerationSettings?(settings: {temperature: number}): void;
+  getCacheKey?(): string;
   getInstallState(): Promise<{model: 'not-installed' | 'installing' | 'ready' | 'error'; modelBytes: {installed: number; total: number}; installedVoices: string[]; defaultVoice: string; error?: string}>;
   installModel(options?: {signal?: AbortSignal; onProgress?: (progress: SpeechInstallProgress) => void}): Promise<void>;
   removeModel(): Promise<void>;

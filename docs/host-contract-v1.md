@@ -355,7 +355,7 @@ opens read-aloud setup. Dictation is shown only while editing a writable note.
 Read-aloud remains available in view mode and does not require write access.
 
 Notes may retain completed read-aloud paragraphs in memory (at most 24 MiB
-combined), keyed by exact spoken text, voice and speed. Hosts advertising
+combined), keyed by exact spoken text, voice, speed and optional host generation identity. Hosts advertising
 `tts.supportsSegments` accept `segments` on synthesis and label returned chunks
 with `segmentIndex`; all missing paragraphs share one worker/model load. Older
 hosts retain whole-reading replay. Notes clears audio on note changes, speech
@@ -377,3 +377,40 @@ The host owns catalog trust, persistence and model/runtime update compatibility.
 
 Audio controls belong together in the second toolbar, with read-aloud available
 in Preview and dictation/voice recording only when editing a writable note.
+
+
+### Optional generation preferences
+
+`tts.getGenerationSettings?()` returns supported settings or `null` for the
+current engine. `setGenerationSettings?({temperature})` validates and stores
+that device preference; the current Pocket runtime supports 0.1–1.2 with a 0.7
+default. The host injects the preference into synthesis and voice previews.
+`tts.getCacheKey?()` supplies an opaque generation identity, including engine
+and effective settings, for Notes' memory-only replay keys. Hosts without these
+methods retain the earlier interface. No settings control is shown unless the
+host implements it, and changing a preference never downloads speech assets.
+
+### Device reading and personal voices
+
+The current reading UI uses `tts.getReadingMode()` / `setReadingMode()` with
+`device` or `download`. The host defaults mobile to device and desktop to
+download. `tts.native` exposes local-only `refreshVoices`, `listVoices`, and
+`start({segments,voice,signal,onSegment,onState})`; the returned session supports
+`done`, `pause`, `resume`, and `stop`. Segment callbacks reflect actual playback.
+Native mode must not query the downloaded model or instantiate its worker.
+
+Authenticated host contexts may provide `tts.privateVoices`. Its `getSetupState`
+and explicit `prepare` use the updated reading runtime, while `create` accepts a
+label and bounded PCM WAV in memory. `list` returns metadata only; `remove`
+affects one voice. The host validates and locally encodes the sample, stores only
+the derived embedding under the immutable authenticated owner, and aborts pending
+writes when the session changes or the operation is cancelled. Guest readers
+receive no private voice methods. Private voices are returned by the normal
+reading catalog after refresh and are marked `personal`; their samples are never
+part of Notes exports or shared note content.
+
+Existing compatible reading downloads remain usable. Creating a personal voice
+may require an explicit newer runtime download; updating Notes alone never
+starts that transfer. Downloaded English voices are individual immutable assets.
+Other downloaded languages and pre-install preview clips are not implied by this
+contract.

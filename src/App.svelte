@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type, Share2, Settings2, Speech as SpeechIcon, Volume2 } from 'lucide-svelte';
-  import type { Host, Library, Note, Document, Documents, SpeechTts } from './host';
+  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type, Share2, Settings2, Speech as SpeechIcon, Volume2, HelpCircle } from 'lucide-svelte';
+  import type { Host, Library, Note, Document, Documents, SpeechNativeReading, SpeechNativeVoice, SpeechTts } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import ResponsiveToolbar from './ResponsiveToolbar.svelte';
   import Preview from './Preview.svelte';
@@ -27,6 +27,7 @@
   import SpeechSettingsDialog from './SpeechSettingsDialog.svelte';
   import DictationDialog from './DictationDialog.svelte';
   import ReadAloudControls from './ReadAloudControls.svelte';
+  import HelpDialog from './HelpDialog.svelte';
   import { editMarkdown } from './formatting';
   import { markdownNewline, type MarkdownNewline } from './keyboard';
   import { EditorHistory, type EditorSelection } from './editorHistory';
@@ -36,7 +37,7 @@
   import { DictationController, prepareDictationInsertion, type DictationState, type DictationTarget } from './dictation';
   import { markdownToSpeech } from './speechText';
   import { createSpeechPlayback } from './speechPlayback';
-  import { SpeechReplay } from './speechReplay';
+  import { SpeechReplay, speechReplayParagraphs } from './speechReplay';
   const speechReplay = new SpeechReplay();
   let replayNoteId: string | null = null;
   let previewContainer = $state<HTMLDivElement>();
@@ -200,6 +201,8 @@
   let tagInput = $state('');
   let backupOpen = $state(false);
   let speechSettingsOpen = $state(false);
+  let helpOpen = $state(false);
+  export function showHelp() { helpOpen = true; }
   let speechSettingsSection = $state<'all'|'dictation'|'tts'>('all');
   let speechInstalled = $state(false);
   let dictationOpen = $state(false);
@@ -211,11 +214,17 @@
   let readProgress = $state({completed: 0, total: 0});
   let readError = $state('');
   let readScope = $state('This note');
+  let readParagraphs = $state<string[]>([]);
+  let activeReadParagraph = $state<number|null>(null);
+  let lastReadParagraph = $state<number|null>(null);
+  let followReading = $state(true);
+  let readingMode = $state<'device'|'download'>('download');
+  let nativeVoices = $state<readonly SpeechNativeVoice[]>([]);
   let readTargetId = '';
   let readTargetBody = '';
   let readSequence = 0;
   let readController: AbortController | null = null;
-  let readPlayback: ReturnType<typeof createSpeechPlayback> | null = null;
+  let readPlayback: {pause(): Promise<void>; resume(): Promise<void>; stop(): void} | null = null;
   let nextOffset = $state<number | null>(null);
   let loading = $state(true);
   let listLoading = $state(false);
@@ -358,11 +367,11 @@
   let searchTimer: ReturnType<typeof setTimeout>;
   const ready = $derived(host.documents?.version === 1 && !!host.user);
   const speechAvailable = $derived(host.speech?.version === 1);
-  const readAloudReady = $derived(ttsState?.model === 'ready' && ttsState.installedVoices.length > 0);
+  const readAloudReady = $derived(readingMode === 'device' ? nativeVoices.length > 0 : ttsState?.model === 'ready' && ttsState.installedVoices.length > 0);
   const dictationActive = $derived(['starting', 'recording', 'stopping'].includes(dictationState.phase));
   const trashSupported = $derived(host.documents?.trash?.version === 1);
   const deletionUncertain = $derived(deletePending && deleteRequest?.documentId === view?.document.id);
-  const historyBlocked = $derived(opening || creating || deleting || actionBusy || !!deletionUncertain || !!mediaKind || !!formulaSelection || !!linkDialog || dictationOpen || speechSettingsOpen || shareFrozen);
+  const historyBlocked = $derived(opening || creating || deleting || actionBusy || !!deletionUncertain || !!mediaKind || !!formulaSelection || !!linkDialog || dictationOpen || speechSettingsOpen || helpOpen || shareFrozen);
   const selectedLibrary = $derived(libraries.find(l => l.id === libraryId));
   const canDictate = $derived(speechAvailable && mode !== 'preview' && !!view && (view.document.canWrite ?? selectedLibrary?.canCreate ?? false) && !shareFrozen);
   const canInsertAudio = $derived(mode !== 'preview' && !!view && (view.document.canWrite ?? selectedLibrary?.canCreate ?? false) && !shareFrozen);
@@ -390,6 +399,13 @@
     speechInstalled = status.installed;
   }
   function setTtsStatus(status: TtsInstallState | null) { ttsState = status; }
+  function mobileNative(tts: SpeechTts | undefined): SpeechNativeReading | null {
+    const native = tts?.native;
+    return native?.isMobile ? native : null;
+  }
+  function setReadingStatus(mode: 'device'|'download', voices: readonly SpeechNativeVoice[]) {
+    readingMode = mode; nativeVoices = [...voices];
+  }
   function openSpeechSettings(section: 'all'|'dictation'|'tts' = 'all') { speechReplay.clear(); stopReadAloud(); speechSettingsSection = section; speechSettingsOpen = true; }
   async function refreshSpeechStatus() {
     const speech = host.speech;
@@ -398,8 +414,27 @@
       const status = await speech.status();
       if (alive && host.speech === speech) setSpeechStatus(status);
     } catch { /* Device speech settings exposes a retry without interrupting Notes. */ }
+    const tts = speech.tts;
+    const native = mobileNative(tts);
+    let resolvedMode: 'device'|'download' = native ? (tts?.getReadingMode?.() ?? 'device') : 'download';
     try {
-      const status = await speech.tts?.getInstallState();
+      if (tts && native) {
+        const voices = await native.refreshVoices();
+        resolvedMode = tts.getReadingMode?.() ?? 'device';
+        if (alive && host.speech === speech) {
+          nativeVoices = [...voices];
+          readingMode = resolvedMode;
+          const selected = tts.getDeviceVoice?.() ?? '';
+          if (voices.length && !voices.some(voice => voice.id === selected)) tts.setDeviceVoice?.(voices[0].id);
+        }
+      } else if (alive && host.speech === speech) { nativeVoices = []; readingMode = 'download'; }
+    } catch { resolvedMode = tts?.getReadingMode?.() ?? (native ? 'device' : 'download'); if (alive && host.speech === speech) { nativeVoices = []; readingMode = resolvedMode; } }
+    if (!tts || (native && resolvedMode === 'device')) {
+      if (alive && host.speech === speech) setTtsStatus(null);
+      return;
+    }
+    try {
+      const status = await tts?.getInstallState();
       if (status && alive && host.speech === speech) setTtsStatus(status);
     } catch { /* Read-aloud setup remains available through device speech settings. */ }
   }
@@ -467,6 +502,9 @@
     readPhase = 'idle';
     readTargetId = '';
     readTargetBody = '';
+    readParagraphs = [];
+    activeReadParagraph = null;
+    lastReadParagraph = null;
     readProgress = {completed: 0, total: 0};
     if (nextError) readError = nextError;
   }
@@ -493,15 +531,39 @@
     dictationController?.cancel();
     const ticket = ++readSequence;
     const request = new AbortController();
+    const paragraphs = speechReplayParagraphs(tts, text);
+    const highlight = scope !== 'Selected text';
+    readController = request; readTargetId = targetId; readTargetBody = editorBody; readScope = scope; readPhase = 'starting'; readError = ''; readProgress = {completed: 0, total: 0}; readParagraphs = highlight ? paragraphs : [];
+    const native = readingMode === 'device' ? mobileNative(tts) : null;
+    if (native) {
+      try {
+        const configuredVoice = tts.getDeviceVoice?.() ?? '';
+        const voice = nativeVoices.some(item => item.id === configuredVoice) ? configuredVoice : nativeVoices[0]?.id;
+        const playback = native.start({segments:paragraphs, voice, signal:request.signal,
+          onSegment: paragraphIndex => { if (ticket === readSequence) { if (paragraphIndex !== null) lastReadParagraph = paragraphIndex; activeReadParagraph = highlight ? paragraphIndex : null; } },
+          onState: state => { if (ticket !== readSequence) return; if (state === 'playing') readPhase = 'playing'; else if (state === 'paused') { readPhase = 'paused'; activeReadParagraph = null; } else activeReadParagraph = null; },
+        });
+        if (ticket !== readSequence) { playback.stop(); return; }
+        readPlayback = playback;
+        await playback.done;
+        if (ticket === readSequence) stopReadAloud();
+      } catch (cause) {
+        if (ticket === readSequence && !request.signal.aborted) stopReadAloud(message(cause));
+      } finally {
+        if (ticket === readSequence) { readController = null; readPlayback?.stop(); readPlayback = null; readPhase = 'idle'; readTargetId = ''; readTargetBody = ''; readParagraphs = []; activeReadParagraph = null; lastReadParagraph = null; }
+      }
+      return;
+    }
     let playback: ReturnType<typeof createSpeechPlayback>;
     try {
       playback = createSpeechPlayback(state => {
         if (ticket !== readSequence) return;
         if (state === 'playing') readPhase = 'playing';
         else if (state === 'paused') readPhase = 'paused';
-      });
-    } catch (cause) { readError = message(cause); return; }
-    readController = request; readPlayback = playback; readTargetId = targetId; readTargetBody = editorBody; readScope = scope; readPhase = 'starting'; readError = ''; readProgress = {completed: 0, total: 0};
+        else if (state === 'ready') { readPhase = 'starting'; activeReadParagraph = null; }
+      }, paragraphIndex => { if (ticket === readSequence) { if (paragraphIndex !== null) lastReadParagraph = paragraphIndex; activeReadParagraph = highlight ? paragraphIndex : null; } });
+    } catch (cause) { stopReadAloud(message(cause)); return; }
+    readPlayback = playback;
     try {
       await playback.ready;
       await speechReplay.speak(tts, {text, signal: request.signal, onProgress: progress => { if (ticket === readSequence) readProgress = {completed: progress.completed, total: progress.total}; }, onChunk: chunk => playback.play(chunk)}, scope === 'Selected text');
@@ -515,11 +577,19 @@
   }
   async function pauseReadAloud() {
     if (readPhase !== 'playing') return;
-    try { await readPlayback?.pause(); } catch (cause) { stopReadAloud(message(cause)); }
+    try { await readPlayback?.pause(); readPhase = 'paused'; activeReadParagraph = null; } catch (cause) { stopReadAloud(message(cause)); }
   }
   async function resumeReadAloud() {
     if (readPhase !== 'paused') return;
-    try { await readPlayback?.resume(); } catch (cause) { stopReadAloud(message(cause)); }
+    try { await readPlayback?.resume(); readPhase = 'playing'; if (readParagraphs.length) activeReadParagraph = lastReadParagraph; } catch (cause) { stopReadAloud(message(cause)); }
+  }
+  function manualReadScroll(event: Event) {
+    if (!readParagraphs.length) return;
+    if (event instanceof KeyboardEvent) {
+      if (!['PageUp','PageDown','Home','End','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)) return;
+      if (event.target instanceof Element && event.target.closest('input,textarea,select,button,a,[contenteditable="true"]')) return;
+    }
+    followReading = false;
   }
 
   $effect(() => {
@@ -528,6 +598,7 @@
     if (replayNoteId !== noteId) { speechReplay.clear(); replayNoteId = noteId; }
     if (readTargetId && (readTargetId !== noteId || readTargetBody !== editorBody)) stopReadAloud('Read-aloud stopped because the note changed.');
   });
+  $effect(() => { if (!host.user && readTargetId) stopReadAloud(); });
 
   function refreshDrafts() { try { recoveries = drafts.list(); } catch { /* Editing still works with explicit recovery warnings. */ } }
   async function loadList(append = false) {
@@ -1200,13 +1271,14 @@
   {:else if loading}
     <div class="welcome" role="status"><LoaderCircle class="spin"/><p>Opening your notebooks…</p></div>
   {:else}
-    <aside inert={templatesOpen || todoOpen || !!formulaSelection || dictationOpen || speechSettingsOpen}>
+    <aside inert={templatesOpen || todoOpen || !!formulaSelection || dictationOpen || speechSettingsOpen || helpOpen}>
       <div class="brand"><span class="brand-icon"><BookOpen size={20}/></span><div><strong>TEND Notes</strong><small>A little space to think.</small></div></div>
       <div class="library-picker">
         <label class="sr-only" for="notes-library">Notebook</label>
         <select id="notes-library" value={libraryId} onchange={selectLibrary} disabled={!libraries.length || opening}>{#each libraries as library}<option value={library.id}>{library.name}</option>{/each}</select>
         <button class="icon" class:chosen={searchOpen} bind:this={searchTrigger} aria-label="Search notes" title="Search notes" aria-expanded={searchOpen} aria-controls="notes-search" onclick={() => void toggleSearch()}><Search size={16}/></button>
         <button class="icon" aria-label="Rename notebook" title="Rename notebook" disabled={!selectedLibrary || actionBusy} onclick={() => beginRename()}><TextCursorInput size={15}/></button>
+        <button class="icon notes-help-trigger sidebar-help" class:has-note={!!view && !todoOpen && !trashOpen} aria-label="Notes guide" title="Notes guide" aria-haspopup="dialog" aria-expanded={helpOpen} onclick={showHelp}><HelpCircle size={15}/></button>
         {#if speechAvailable && !view}<button class="icon" aria-label="Device speech settings" title="Device speech settings" aria-expanded={speechSettingsOpen} onclick={() => openSpeechSettings()}><Settings2 size={15}/></button>{/if}
       </div>
       {#if searchOpen}<div class="search" id="notes-search"><Search size={14}/><input bind:this={searchInput} aria-label="Search your notes" placeholder="Search your notes" bind:value={query} oninput={search} onkeydown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void toggleSearch(); } }}/><button class="icon" aria-label="Close search" title="Close search" onclick={() => void toggleSearch()}><X size={14}/></button></div>{/if}
@@ -1253,13 +1325,13 @@
       </div>
       <div class="sidebar-footer">{#if indexing}<small role="status">Preparing full-text search…</small>{/if}{#if indexError}<small role="status">{indexError}</small>{/if}<div class="footer-tools"><small>Markdown. Yours to keep.</small><button class="icon" aria-label="Import Markdown" title="Import Markdown" onclick={() => filePicker?.click()} disabled={!selectedLibrary?.canCreate}><Upload size={15}/></button><button class="icon" aria-label="Export & backups" title="Export & backups" onclick={() => backupOpen = true}><Download size={15}/></button></div></div>
     </aside>
-    <main inert={templatesOpen || !!formulaSelection || dictationOpen || speechSettingsOpen}>
+    <main inert={templatesOpen || !!formulaSelection || dictationOpen || speechSettingsOpen || helpOpen}>
       {#if trashOpen && host.documents?.trash}
         <TrashPanel api={host.documents.trash} onclose={() => void closeTrash()} onchange={() => void loadList()}/>
       {:else if todoOpen}
         <TodoPanel rows={todoState.rows} loading={todoState.loading} scanned={todoState.scanned} errors={todoState.errors} busy={todoState.busy} ontoggle={(key, checked) => void toggleTask(key, checked)} onopen={key => void openTask(key)} onrefresh={() => void taskWorkspace?.refresh()} onclose={() => void closeTodo()}/>
       {:else}
-      <header><button class="icon desktop-toggle" onclick={() => sidebar = !sidebar} aria-label={sidebar ? 'Hide notebooks' : 'Show notebooks'} title={sidebar ? 'Hide notebooks' : 'Show notebooks'}>{#if sidebar}<PanelLeftClose size={18}/>{:else}<PanelLeftOpen size={18}/>{/if}</button><button class="icon mobile-back" onclick={() => mobileEditor = false} aria-label="Back to notes"><ArrowLeft size={18}/></button><div class="breadcrumb">{#if view}<button class="note-title" aria-label="Rename current note" title="Rename note" onclick={() => beginRename(view!.document)}><h1>{title(view.document.name)}</h1></button>{:else}{selectedLibrary?.name ?? 'Your notes'}{/if}</div>{#if view}{#if quickCaptureTitle && host.documents?.rename}<button class="suggest-title" aria-label="Use first line as title" title={`Use “${quickCaptureTitle}” as title`} onclick={useFirstLineAsTitle}><TextCursorInput size={14}/><span>Use first line as title</span></button>{/if}<button class="icon focus-toggle" aria-label={focusMode ? "Exit focus mode" : "Focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} onclick={() => { focusMode = !focusMode; mode = "edit"; }}>{#if focusMode}<Minimize size={16}/>{:else}<Maximize size={16}/>{/if}</button><div class="outline-wrap" bind:this={outlineBoundary}><button class="icon" bind:this={outlineTrigger} aria-label="Note outline" title="Note outline · jump to source" aria-expanded={outlineOpen} aria-controls="note-outline" onclick={() => void toggleOutline()}><ListTree size={16}/></button>{#if outlineOpen}<div id="note-outline" class="outline-popover" role="dialog" aria-label="Note outline" tabindex="-1" use:dismissOutline onkeydown={outlineKeydown}>{#if outline.length}<span class="outline-label">JUMP TO SOURCE</span>{#each outline as heading, index (index)}<button class="outline-item" style={`--outline-level:${heading.level}`} onclick={() => void jumpToOutline(heading)}>{heading.label}</button>{/each}{:else}<p>No headings in this note yet.</p>{/if}</div>{/if}</div><div class="document-actions">{#if host.documents?.sharing?.version===1}<button class="icon" aria-label="Share note" title="Share note" aria-expanded={shareOpen} onclick={() => shareOpen=true}><Share2 size={16}/></button>{/if}<button class="icon" aria-label="Links to this note" title="Links to this note" aria-pressed={backlinksOpen} onclick={() => backlinksOpen = !backlinksOpen}><Link size={16}/></button><button class="icon" class:chosen={parsed.organization.pinned} aria-label={parsed.organization.pinned ? "Unpin note" : "Pin note"} aria-pressed={parsed.organization.pinned} title={parsed.organization.pinned ? "Unpin note" : "Pin note"} onclick={() => organize({pinned: !parsed.organization.pinned})}><Pin size={16}/></button><button class="icon" aria-label="Organize note" title="Tags and color" aria-expanded={organizeOpen} onclick={() => organizeOpen = !organizeOpen}><Tag size={16}/></button><button class="icon" aria-label="Export Markdown" title="Export Markdown" onclick={() => download(view!.content, view!.document.name)}><Download size={17}/></button><button class="icon" aria-label="Delete note" title="Delete note" onclick={() => beginDelete(view!.document)}><Trash2 size={16}/></button></div><div class="view-modes" aria-label="Editor view"><button class:active={mode === 'edit' && !formattedWriting} class="icon" aria-label="Edit Markdown" title="Edit Markdown" onclick={() => void editSource()}><PenLine size={16}/></button><button class="icon" class:active={formattedWriting && mode !== 'preview'} aria-label="Rich text writing" aria-pressed={formattedWriting && mode !== 'preview'} title={formattedWriting ? "Use plain Markdown source" : "Rich text writing"} disabled={writingLoading} onclick={() => void toggleWriting()}>{#if writingLoading}<LoaderCircle size={16} class="spin"/>{:else}<Type size={16}/>{/if}</button><button class:active={mode === 'split'} class="icon split-button" aria-label="Split view" title="Split view" aria-pressed={mode === 'split'} onclick={() => mode = mode === 'split' ? 'edit' : 'split'}><Columns2 size={16}/></button><button class:active={mode === 'preview'} class="icon" aria-label="Preview" title="Preview" onclick={() => mode = 'preview'}><Eye size={17}/></button></div>{/if}</header>
+      <header><button class="icon desktop-toggle" onclick={() => sidebar = !sidebar} aria-label={sidebar ? 'Hide notebooks' : 'Show notebooks'} title={sidebar ? 'Hide notebooks' : 'Show notebooks'}>{#if sidebar}<PanelLeftClose size={18}/>{:else}<PanelLeftOpen size={18}/>{/if}</button><button class="icon mobile-back" onclick={() => mobileEditor = false} aria-label="Back to notes"><ArrowLeft size={18}/></button><div class="breadcrumb">{#if view}<button class="note-title" aria-label="Rename current note" title="Rename note" onclick={() => beginRename(view!.document)}><h1>{title(view.document.name)}</h1></button>{:else}{selectedLibrary?.name ?? 'Your notes'}{/if}</div>{#if view}{#if quickCaptureTitle && host.documents?.rename}<button class="suggest-title" aria-label="Use first line as title" title={`Use “${quickCaptureTitle}” as title`} onclick={useFirstLineAsTitle}><TextCursorInput size={14}/><span>Use first line as title</span></button>{/if}<button class="icon notes-help-trigger" aria-label="Notes guide" title="Notes guide" aria-haspopup="dialog" aria-expanded={helpOpen} onclick={showHelp}><HelpCircle size={16}/></button><button class="icon focus-toggle" aria-label={focusMode ? "Exit focus mode" : "Focus mode"} title={focusMode ? "Exit focus mode" : "Focus mode"} onclick={() => { focusMode = !focusMode; mode = "edit"; }}>{#if focusMode}<Minimize size={16}/>{:else}<Maximize size={16}/>{/if}</button><div class="outline-wrap" bind:this={outlineBoundary}><button class="icon" bind:this={outlineTrigger} aria-label="Note outline" title="Note outline · jump to source" aria-expanded={outlineOpen} aria-controls="note-outline" onclick={() => void toggleOutline()}><ListTree size={16}/></button>{#if outlineOpen}<div id="note-outline" class="outline-popover" role="dialog" aria-label="Note outline" tabindex="-1" use:dismissOutline onkeydown={outlineKeydown}>{#if outline.length}<span class="outline-label">JUMP TO SOURCE</span>{#each outline as heading, index (index)}<button class="outline-item" style={`--outline-level:${heading.level}`} onclick={() => void jumpToOutline(heading)}>{heading.label}</button>{/each}{:else}<p>No headings in this note yet.</p>{/if}</div>{/if}</div><div class="document-actions">{#if host.documents?.sharing?.version===1}<button class="icon" aria-label="Share note" title="Share note" aria-expanded={shareOpen} onclick={() => shareOpen=true}><Share2 size={16}/></button>{/if}<button class="icon" aria-label="Links to this note" title="Links to this note" aria-pressed={backlinksOpen} onclick={() => backlinksOpen = !backlinksOpen}><Link size={16}/></button><button class="icon" class:chosen={parsed.organization.pinned} aria-label={parsed.organization.pinned ? "Unpin note" : "Pin note"} aria-pressed={parsed.organization.pinned} title={parsed.organization.pinned ? "Unpin note" : "Pin note"} onclick={() => organize({pinned: !parsed.organization.pinned})}><Pin size={16}/></button><button class="icon" aria-label="Organize note" title="Tags and color" aria-expanded={organizeOpen} onclick={() => organizeOpen = !organizeOpen}><Tag size={16}/></button><button class="icon" aria-label="Export Markdown" title="Export Markdown" onclick={() => download(view!.content, view!.document.name)}><Download size={17}/></button><button class="icon" aria-label="Delete note" title="Delete note" onclick={() => beginDelete(view!.document)}><Trash2 size={16}/></button></div><div class="view-modes" aria-label="Editor view"><button class:active={mode === 'edit' && !formattedWriting} class="icon" aria-label="Edit Markdown" title="Edit Markdown" onclick={() => void editSource()}><PenLine size={16}/></button><button class="icon" class:active={formattedWriting && mode !== 'preview'} aria-label="Rich text writing" aria-pressed={formattedWriting && mode !== 'preview'} title={formattedWriting ? "Use plain Markdown source" : "Rich text writing"} disabled={writingLoading} onclick={() => void toggleWriting()}>{#if writingLoading}<LoaderCircle size={16} class="spin"/>{:else}<Type size={16}/>{/if}</button><button class:active={mode === 'split'} class="icon split-button" aria-label="Split view" title="Split view" aria-pressed={mode === 'split'} onclick={() => mode = mode === 'split' ? 'edit' : 'split'}><Columns2 size={16}/></button><button class:active={mode === 'preview'} class="icon" aria-label="Preview" title="Preview" onclick={() => mode = 'preview'}><Eye size={17}/></button></div>{/if}</header>
       {#if shareFrozen}<div class="notice" role="status">Use shared editor while sharing is active. Stop sharing to resume private editing.</div>{/if}
       {#if error}<div class="notice error" role="alert">{error}<button class="icon" aria-label="Dismiss message" onclick={() => error = ''}><X size={15}/></button></div>{/if}
       {#if recoveries.length && !view}
@@ -1312,9 +1384,9 @@
         <div class="writing" class:split={mode === 'split'} class:preview-only={mode === 'preview'}>
           {#if mode !== 'preview'}{#if formattedWriting && Surface}{#key view.document.id}<WritingEditor {Surface} body={editorBody} readOnly={historyBlocked} matches={findOpen ? findMatches : []} activeStart={findActiveStart} bind:surface={writingSurface} onchange={change => commitEditorBody(change.body, change.before, change.after, change.key)} onundo={() => applyHistory('undo')} onredo={() => applyHistory('redo')}/>{/key}{:else}<textarea class="editor" bind:this={sourceEditor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} oncompositionstart={() => { compositionKey = `composition:${++compositionSequence}`; }} oncompositionend={() => { compositionKey = null; pendingInput = null; }} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind || dictationOpen || speechSettingsOpen || shareFrozen} value={parsed.body} oninput={editorInput} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}{/if}
           {#if findOpen && mode !== 'preview' && !formattedWriting && sourceEditor}<FindHighlights editor={sourceEditor} body={editorBody} matches={findMatches} activeStart={findActiveStart}/>{/if}
-          {#if mode !== 'edit'}<!-- svelte-ignore a11y_click_events_have_key_events --><!-- svelte-ignore a11y_no_static_element_interactions --><div class="preview" bind:this={previewContainer}><Preview onnotelink={id => void openLinkedNote(id)} content={parsed.body} documents={host.documents!} noteId={view.document.id}/></div>{/if}
+          {#if mode !== 'edit'}<div class="preview" bind:this={previewContainer} role="region" aria-label="Note preview" tabindex="0" onwheel={manualReadScroll} ontouchmove={manualReadScroll} onpointerdown={manualReadScroll} onkeydown={manualReadScroll}><Preview onnotelink={id => void openLinkedNote(id)} content={parsed.body} documents={host.documents!} noteId={view.document.id} speechParagraphs={readParagraphs} activeSpeechParagraph={activeReadParagraph} followSpeech={followReading}/></div>{/if}
         </div>
-        {#if readPhase !== 'idle' || readError}<ReadAloudControls phase={readPhase} scope={readScope} progress={readProgress} error={readError} onpause={pauseReadAloud} onresume={resumeReadAloud} onstop={() => { readError = ''; stopReadAloud(); }}/>{/if}
+        {#if readPhase !== 'idle' || readError}<ReadAloudControls phase={readPhase} scope={readScope} progress={readProgress} error={readError} follow={followReading} onfollowchange={value => followReading = value} onpause={pauseReadAloud} onresume={resumeReadAloud} onstop={() => { readError = ''; stopReadAloud(); }}/>{/if}
         <footer><span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span><button class="save-status" onclick={() => void save()} disabled={view.saving || !view.dirty || view.conflict}>{#if view.saving}<LoaderCircle size={13} class="spin"/> Saving…{:else if view.dirty}<span class="unsaved-dot"></span>{view.error ? 'Not saved' : 'Save now'}{:else}<Check size={14}/> All changes saved{/if}</button></footer>
       {:else}
         <div class="welcome"><span class="welcome-icon"><BookOpen size={37} strokeWidth={1.4}/></span><span class="eyebrow">YOUR OWN QUIET CORNER</span>{#if !libraries.length}<h1>Make room for an idea.</h1><p>Tend prepares a protected home for your notes on your server. Start writing, then choose a backup destination whenever you’re ready.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}><FolderOpen size={17}/> Set up your notebook</button>{:else if hasLoadedNotes}<h1>Pick up where you left off.</h1><p>Return to a recent note, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => void continueWriting()}><PenLine size={17}/> Continue writing</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if facets.total > 0}<h1>No notes match these filters.</h1><p>Clear the filters to continue writing, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => { query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; void loadList(); }}>Clear filters</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if !selectedLibrary?.canCreate}<h1>Make room for an idea.</h1><p>Choose a connected notebook or let Tend prepare a new one to start writing.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}>Set up your notebook</button>{:else}<h1>Make room for an idea.</h1><p>A quick thought. A plan taking shape. Something worth remembering.<br/>Keep it here, in your own words.</p><button class="primary" onclick={() => beginCreate()}><Plus size={17}/> Write your first note</button><button class="quiet" onclick={() => filePicker?.click()}><Upload size={14}/> Bring a Markdown file</button>{/if}<small>Simple to write. Easy to take with you.</small></div>
@@ -1342,8 +1414,9 @@
     refreshKey={templateRefresh}
   />{/if}
   {#if backupOpen}<BackupPanel api={host.documents?.backups} {libraryId} libraryName={selectedLibrary?.name ?? "Current notebook"} beforeAction={ensureSaved} close={() => backupOpen = false}/>{/if}
-  {#if speechSettingsOpen && host.speech?.version === 1}<SpeechSettingsDialog section={speechSettingsSection} speech={host.speech} onstatus={setSpeechStatus} onttsstatus={setTtsStatus} onclose={() => speechSettingsOpen = false}/>{/if}
+  {#if speechSettingsOpen && host.speech?.version === 1}<SpeechSettingsDialog section={speechSettingsSection} speech={host.speech} onstatus={setSpeechStatus} onttsstatus={setTtsStatus} onreadingstatus={setReadingStatus} onclose={() => { speechSettingsOpen = false; void refreshSpeechStatus(); }}/>{/if}
   {#if dictationOpen}<DictationDialog value={dictationState} onstart={startDictation} onstop={() => dictationController?.stop()} oncancel={() => dictationController?.cancel()} oninsert={insertDictation} onclear={clearDictation} onclose={closeDictation}/>{/if}
+  {#if helpOpen}<HelpDialog onclose={() => helpOpen = false}/>{/if}
   {#if createOpen || deleteOpen || reloadOpen || renameOpen}
     <div class="notes-dialog-layer" role="presentation"><div class="notes-dialog" use:focusDialog role="dialog" aria-modal="true" aria-label={renameOpen ? 'Rename ' + renameOpen : createOpen ? 'New note' : deleteOpen ? 'Delete note' : 'Reload saved version'} tabindex="-1" onkeydown={modalKey}>
       <button class="icon close" aria-label="Close dialog" onclick={() => { createOpen = false; deleteOpen = false; reloadOpen = false; renameOpen = null; }} disabled={creating || deleting || actionBusy}><X size={18}/></button>
@@ -1360,6 +1433,7 @@
 </div>
 
 <style>
+  .sidebar-help.has-note{display:none}@container(max-width:680px){.sidebar-help.has-note{display:inline-flex}}
   .rich-link-backdrop{position:absolute;inset:0;z-index:90;background:#0006;display:grid;place-items:center;padding:16px}.rich-link-dialog{width:min(440px,100%);background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 20px 70px #0005}.rich-link-dialog input{display:block;width:100%;box-sizing:border-box;margin:8px 0;padding:12px;background:var(--wash);color:var(--ink);border:1px solid var(--line);border-radius:8px;font-size:16px}.rich-link-dialog p{font-size:13px;color:var(--soft)}.rich-link-dialog button{min-height:44px;background:var(--wash);color:var(--ink);padding:8px 14px;border:1px solid var(--line);border-radius:8px;margin-right:8px}
 
   .editor::selection{background:#2563eb;color:#fff}

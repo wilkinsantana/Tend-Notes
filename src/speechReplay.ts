@@ -4,6 +4,11 @@ type Chunk = Parameters<Options['onChunk']>[0];
 type Summary = Awaited<ReturnType<SpeechTts['synthesize']>>;
 type Entry = {chunks: Chunk[]; bytes: number};
 
+export function speechReplayParagraphs(tts: SpeechTts, text: string): string[] {
+  const lines = tts.supportsSegments ? text.split(/\n+/).map(paragraph => paragraph.trim()).filter(Boolean) : [text];
+  return lines.length <= 1000 ? lines : [text];
+}
+
 /** Completed paragraphs only, RAM only, with one aggregate audio budget. */
 export class SpeechReplay {
   private generation = 0;
@@ -15,9 +20,9 @@ export class SpeechReplay {
     const voice = options.voice ?? tts.getDefaultVoice();
     // Old hosts still benefit from whole-reading replay; new hosts batch all
     // missing paragraphs into ONE worker/model load, not one per paragraph.
-    const lines = tts.supportsSegments ? options.text.split(/\n+/).map(p => p.trim()).filter(Boolean) : [options.text];
-    const paragraphs = lines.length <= 1000 ? lines : [options.text];
-    const keys = paragraphs.map(text => JSON.stringify([text, voice, options.speed ?? 1]));
+    const paragraphs = speechReplayParagraphs(tts, options.text);
+    const cacheKey = tts.getCacheKey?.() ?? '';
+    const keys = paragraphs.map(text => JSON.stringify([text, voice, options.speed ?? 1, cacheKey]));
     const wanted = new Set(keys);
     for (const [key, entry] of this.cached) if (!preserveOtherParagraphs && !wanted.has(key)) { this.bytes -= entry.bytes; this.cached.delete(key); }
     const ticket = ++this.generation;
@@ -27,9 +32,9 @@ export class SpeechReplay {
     active();
     const missing = paragraphs.map((_, index) => index).filter(index => !this.cached.has(keys[index]));
     let cursor = 0, outputIndex = 0, sampleCount = 0;
-    const play = async (chunk: Chunk) => {
+    const play = async (chunk: Chunk, paragraphIndex: number) => {
       active();
-      await options.onChunk({...chunk, index: outputIndex++, pcm: chunk.pcm.slice(0)});
+      await options.onChunk({...chunk, index: outputIndex++, segmentIndex:paragraphIndex, pcm: chunk.pcm.slice(0)});
       active(); sampleCount += chunk.sampleCount;
     };
     const playCachedUntil = async (end: number) => {
@@ -37,7 +42,7 @@ export class SpeechReplay {
         active();
         const entry = this.cached.get(keys[cursor]);
         if (!entry) throw new Error('Read-aloud changed. Start reading again.');
-        for (const chunk of entry.chunks) await play(chunk);
+        for (const chunk of entry.chunks) await play(chunk, cursor);
         cursor++;
       }
     };
@@ -71,7 +76,7 @@ export class SpeechReplay {
         }
         const fits = retain && this.bytes + pendingBytes + chunk.pcm.byteLength <= this.maxBytes;
         const copy = fits ? {...chunk, pcm:chunk.pcm.slice(0)} : null;
-        await play(chunk);
+        await play(chunk, missing[next]);
         if (!copy) { retain = false; pending = []; pendingBytes = 0; }
         else { pending.push(copy); pendingBytes += copy.pcm.byteLength; }
       },

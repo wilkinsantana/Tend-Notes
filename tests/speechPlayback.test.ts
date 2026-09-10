@@ -59,3 +59,19 @@ test('pause blocks queue admission until resume and stop releases a paused produ
  const waiting=second.play(audio);await Promise.resolve();second.stop();
  await expect(waiting).rejects.toThrow('stopped');await second.drain();
 });
+
+test('reports the paragraph only when its audio starts and clears it for pause, starvation and stop',async()=>{
+ globalThis.AudioContext=FakeContext as unknown as typeof AudioContext;
+ const segments:(number|null)[]=[];const states:string[]=[];
+ const p=createSpeechPlayback(state=>states.push(state),segment=>segments.push(segment));
+ await p.play({...audio,segmentIndex:4});await p.play({...audio,segmentIndex:7});
+ expect(segments).toEqual([4]);
+ await p.pause();expect(segments).toEqual([4,null]);
+ await p.resume();expect(segments).toEqual([4,null,4]);
+ const c=FakeContext.latest;c.currentTime=1;c.nodes[0].onended?.();
+ expect(segments).toEqual([4,null,4,7]);
+ c.currentTime=2;c.nodes[1].onended?.();
+ expect(segments).toEqual([4,null,4,7,null]);expect(states.at(-1)).toBe('ready');
+ await p.play({...audio,segmentIndex:9});expect(segments.at(-1)).toBe(9);
+ p.stop();expect(segments.at(-1)).toBe(null);
+});

@@ -58,14 +58,14 @@ test('opt-in dictation reviews text before insertion and inserts as one undo ste
   await expect(editor).toHaveValue(before);
 });
 
-test('mobile voice settings download voices separately and select a default',async({page})=>{
+test('downloaded voice settings install voices separately and select a default',async({page})=>{
   await page.setViewportSize({width:390,height:844});
   await fixture(page);
   await page.goto('/');
   await page.getByRole('button',{name:'Device speech settings',exact:true}).click();
   const settings=page.getByRole('dialog',{name:'Device speech settings'});
-  await settings.getByRole('button',{name:/Download read-aloud model/}).click();
-  await expect(settings.getByText('Model ready')).toBeVisible();
+  await settings.getByRole('button',{name:/Set up reading/}).click();
+  await expect(settings.getByRole('button',{name:'Download voice',exact:true})).toBeVisible();
   await settings.getByRole('button',{name:'Download voice',exact:true}).click();
   await expect(settings.getByRole('button',{name:'Preview',exact:true})).toBeVisible();
   await settings.getByLabel('Voice',{exact:true}).selectOption('af_bella');
@@ -91,7 +91,7 @@ test('speech icons are visible before downloads and offer only the selected feat
   await expect(dictate).toHaveCount(0);
   await read.click();
   const setup=page.getByRole('dialog',{name:'Device speech settings'});
-  await expect(setup.getByRole('button',{name:/Download read-aloud model/})).toBeVisible();
+  await expect(setup.getByRole('button',{name:/Set up reading/})).toBeVisible();
   await expect(setup.getByRole('button',{name:'Download local dictation'})).toHaveCount(0);
   await setup.getByRole('button',{name:'Close speech settings'}).click();
   await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
@@ -99,7 +99,7 @@ test('speech icons are visible before downloads and offer only the selected feat
   await expect(dictate).toBeVisible();
   await dictate.click();
   await expect(setup.getByRole('button',{name:'Download local dictation'})).toBeVisible();
-  await expect(setup.getByRole('button',{name:/Download read-aloud model/})).toHaveCount(0);
+  await expect(setup.getByRole('button',{name:/Set up reading/})).toHaveCount(0);
   await setup.getByRole('button',{name:'Close speech settings'}).click();
   await page.getByRole('button',{name:'Rich text writing',exact:true}).click();
   await page.getByRole('button',{name:'More formatting options',exact:true}).click();
@@ -115,7 +115,7 @@ test('unchanged note replays and only edited paragraphs are synthesized',async({
   await fixture(page);await page.goto('/');
   await page.getByRole('button',{name:'Device speech settings',exact:true}).click();
   const setup=page.getByRole('dialog',{name:'Device speech settings'});
-  await setup.getByRole('button',{name:/Download read-aloud model/}).click();
+  await setup.getByRole('button',{name:/Set up reading/}).click();
   await setup.getByRole('button',{name:'Download voice',exact:true}).click();
   await setup.getByRole('button',{name:'Close speech settings'}).click();
   await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
@@ -139,7 +139,7 @@ test('highlighting a preview paragraph reads only that text',async({page})=>{
   await fixture(page);await page.goto('/');
   await page.getByRole('button',{name:'Device speech settings',exact:true}).click();
   const setup=page.getByRole('dialog',{name:'Device speech settings'});
-  await setup.getByRole('button',{name:/Download read-aloud model/}).click();
+  await setup.getByRole('button',{name:/Set up reading/}).click();
   await setup.getByRole('button',{name:'Download voice',exact:true}).click();
   await setup.getByRole('button',{name:'Close speech settings'}).click();
   await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
@@ -177,7 +177,7 @@ test('long reading prepares following chunks during audio playback and drains th
   await fixture(page);await page.goto('/');
   await page.getByRole('button',{name:'Device speech settings',exact:true}).click();
   const setup=page.getByRole('dialog',{name:'Device speech settings'});
-  await setup.getByRole('button',{name:/Download read-aloud model/}).click();
+  await setup.getByRole('button',{name:/Set up reading/}).click();
   await setup.getByRole('button',{name:'Download voice',exact:true}).click();
   await setup.getByRole('button',{name:'Close speech settings'}).click();
   await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
@@ -199,4 +199,82 @@ test('long reading prepares following chunks during audio playback and drains th
   const read=page.getByRole('button',{name:'Read selection or note aloud',exact:true});
   await read.click();await expect(read).toBeEnabled({timeout:10000});
   expect(await page.evaluate(()=>(window as any).audioEvidence)).toEqual({ended:3,secondQueuedBeforeEnd:true});
+});
+
+test('mobile paragraph highlight follows audible buffers, respects pause and disengages after manual scrolling',async({page})=>{
+  await page.setViewportSize({width:390,height:844});await fixture(page);
+  await page.addInitScript(() => {
+    const paragraphs=Array.from({length:12},(_,index)=>`Paragraph ${index+1} ${'gentle scrolling words '.repeat(24)}`.trim());
+    localStorage.setItem('tend-notes:demo-documents',JSON.stringify([{id:'reading',libraryId:'personal',name:'Long reading.md',content:paragraphs.join('\n\n'),revision:'r',modifiedAt:1,size:paragraphs.join('\n\n').length}]));
+  });
+  await page.goto('/');
+  await page.getByRole('button',{name:'Device speech settings',exact:true}).click();
+  const setup=page.getByRole('dialog',{name:'Device speech settings'});
+  await setup.getByRole('button',{name:/Set up reading/}).click();
+  await setup.getByRole('button',{name:'Download voice',exact:true}).click();
+  await setup.getByRole('button',{name:'Close speech settings'}).click();
+  await page.getByRole('button',{name:/Long reading.*Markdown/}).click();
+  await page.evaluate(() => {
+    const scope=window as any;
+    class FakeNode {
+      buffer:any=null;onended:(()=>void)|null=null;at=0;stopped=false;ended=false;
+      connect(){} disconnect(){} start(at:number){this.at=at;} stop(){this.stopped=true;}
+    }
+    class FakeAudioContext {
+      currentTime=0;state='running';destination={};onstatechange:(()=>void)|null=null;nodes:FakeNode[]=[];
+      constructor(){scope.readingAudio=this;}
+      async resume(){this.state='running';this.onstatechange?.();}
+      async suspend(){this.state='suspended';this.onstatechange?.();}
+      async close(){this.state='closed';}
+      createBuffer(){return {copyToChannel(){}};}
+      createBufferSource(){const node=new FakeNode();this.nodes.push(node);return node;}
+    }
+    scope.AudioContext=FakeAudioContext;
+    scope.notesSpeechFixture.tts.synthesize=async(o:any)=>{
+      for(let index=0;index<o.segments.length;index++) await o.onChunk({segmentIndex:index,index,pcm:new Float32Array(24000).buffer,sampleRate:24000,sampleCount:24000});
+      return {sampleRate:24000,chunks:o.segments.length,sampleCount:o.segments.length*24000};
+    };
+  });
+  const read=page.getByRole('button',{name:'Read selection or note aloud',exact:true});await read.click();
+  const preview=page.locator('.preview');const paragraphs=preview.locator('p');
+  await expect(paragraphs.nth(0)).toHaveAttribute('data-notes-reading','true');
+  await expect(paragraphs.nth(1)).not.toHaveAttribute('data-notes-reading','true');
+  await page.getByRole('button',{name:'Pause read aloud'}).click();
+  await expect(preview.locator('[data-notes-reading]')).toHaveCount(0);
+  await page.getByRole('button',{name:'Resume read aloud'}).click();
+  await expect(paragraphs.nth(0)).toHaveAttribute('data-notes-reading','true');
+  const follow=page.getByRole('checkbox',{name:'Follow reading'});await follow.uncheck();
+  for(let index=0;index<8;index++) {
+    await expect.poll(()=>page.evaluate(()=>(window as any).readingAudio.nodes.length)).toBeGreaterThan(index);
+    await page.evaluate(index=>{const audio=(window as any).readingAudio;audio.currentTime=index+1;audio.nodes[index].ended=true;audio.nodes[index].onended?.();},index);
+  }
+  await expect(paragraphs.nth(8)).toHaveAttribute('data-notes-reading','true');
+  expect(await preview.evaluate(node=>node.scrollTop)).toBe(0);
+  await follow.check();await expect.poll(()=>preview.evaluate(node=>node.scrollTop)).toBeGreaterThan(0);
+  await preview.locator('.rendered-markdown').dispatchEvent('wheel',{deltaY:-100});await expect(follow).not.toBeChecked();
+  await follow.check();await preview.focus();await page.keyboard.press('PageDown');await expect(follow).not.toBeChecked();
+  await preview.evaluate(node=>node.scrollTop=0);
+  await page.evaluate(()=>{const audio=(window as any).readingAudio;audio.currentTime=9;audio.nodes[8].ended=true;audio.nodes[8].onended?.();});
+  await expect(paragraphs.nth(9)).toHaveAttribute('data-notes-reading','true');expect(await preview.evaluate(node=>node.scrollTop)).toBe(0);
+  await page.getByRole('button',{name:'Stop read aloud'}).click();
+  await expect(preview.locator('[data-notes-reading]')).toHaveCount(0);
+  expect(await page.evaluate(()=>(window as any).readingAudio.nodes.every((node:any)=>node.stopped||node.ended))).toBe(true);
+  await paragraphs.nth(1).evaluate(node=>{const range=document.createRange();range.selectNodeContents(node);const selection=window.getSelection()!;selection.removeAllRanges();selection.addRange(range);});
+  await read.click();await expect(page.getByRole('button',{name:'Stop read aloud'})).toBeVisible();
+  await expect(preview.locator('[data-notes-reading]')).toHaveCount(0);
+  await page.getByRole('button',{name:'Stop read aloud'}).click();
+});
+
+test('speech DOM mapping skips unmatched content without losing later paragraphs',async({page})=>{
+  await page.setViewportSize({width:390,height:844});await page.goto('/');
+  const result=await page.evaluate(async()=>{
+    const path='/src/speechFollow.ts';const {mapSpeechParagraphs,showSpeechParagraph}=await import(/* @vite-ignore */path);
+    const root=document.createElement('div');root.style.cssText='position:fixed;inset:0 auto auto 0;width:300px;height:100px;overflow:auto';
+    for(const text of ['First paragraph','Later paragraph']){const p=document.createElement('p');p.textContent=text;p.style.height='90px';root.append(p);}document.body.append(root);
+    const mapped=mapSpeechParagraphs(root,['Missing image description','Later paragraph']);
+    const before=root.scrollTop;showSpeechParagraph(root,['Missing image description','Later paragraph'],1,true);
+    await new Promise(resolve=>setTimeout(resolve,250));
+    return {mapped:mapped.get(1)?.textContent,before,after:root.scrollTop,active:root.querySelector('[data-notes-reading]')?.textContent};
+  });
+  expect(result).toMatchObject({mapped:'Later paragraph',before:0,active:'Later paragraph'});expect(result.after).toBeGreaterThan(0);
 });
