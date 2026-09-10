@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type, Share2, Settings2, Speech as SpeechIcon, Volume2, HelpCircle } from 'lucide-svelte';
+  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type, Share2, Settings2, Speech as SpeechIcon, Volume2, HelpCircle, Lock, LockOpen } from 'lucide-svelte';
   import type { Host, Library, Note, Document, Documents, SpeechNativeReading, SpeechNativeVoice, SpeechTts } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import ResponsiveToolbar from './ResponsiveToolbar.svelte';
@@ -234,6 +234,39 @@
   let error = $state('');
   let view = $state<View | null>(null);
   let mode = $state<'edit' | 'split' | 'preview'>('preview');
+  let splitScrollLocked = $state(false);
+  let writingContainer = $state<HTMLDivElement>();
+  let syncedScroll = new WeakMap<HTMLElement, number>();
+  $effect(() => { view?.document.id; mode; splitScrollLocked = false; syncedScroll = new WeakMap(); });
+  function syncSplitScroll(source: HTMLElement) {
+    if (!splitScrollLocked || mode !== 'split' || !writingContainer || !previewContainer) return;
+    const left = writingContainer.querySelector<HTMLElement>('textarea.editor, .notes-rich-editor');
+    if (!left || (source !== left && source !== previewContainer)) return;
+    const target = source === left ? previewContainer : left;
+    const range = source.scrollHeight - source.clientHeight;
+    const progress = range > 0 ? source.scrollTop / range : 0;
+    const next = Math.max(0, Math.min(1, progress)) * Math.max(0, target.scrollHeight - target.clientHeight);
+    if (Math.abs(target.scrollTop - next) < 1) return;
+    target.scrollTop = next;
+    syncedScroll.set(target, target.scrollTop);
+  }
+  function watchSplitScroll(node: HTMLDivElement) {
+    const scroll = (event: Event) => {
+      if (!(event.target instanceof HTMLElement)) return;
+      const expected = syncedScroll.get(event.target);
+      syncedScroll.delete(event.target);
+      if (expected !== undefined && Math.abs(event.target.scrollTop - expected) < 1) return;
+      syncSplitScroll(event.target);
+    };
+    node.addEventListener('scroll', scroll, true);
+    return {destroy() { node.removeEventListener('scroll', scroll, true); }};
+  }
+  function toggleSplitScroll() {
+    splitScrollLocked = !splitScrollLocked;
+    syncedScroll = new WeakMap();
+    const left = writingContainer?.querySelector<HTMLElement>('textarea.editor, .notes-rich-editor');
+    if (left) syncSplitScroll(left);
+  }
   let sidebar = $state(true);
   let focusMode = $state(false);
   let indexing = $state(false);
@@ -1422,9 +1455,10 @@
         ]}/></div>{/if}
         {#if findOpen && mode !== 'preview'}<EditorFind bind:this={findPanel} body={editorBody} onmatches={(matches, activeStart) => { findMatches = matches; findActiveStart = activeStart; }} initialQuery={findInitialQuery} initialStart={findInitialStart} onselect={match => void revealSelection(match.start, match.end)} onclose={closeFind}/>{/if}
         {#if backlinksOpen && host.documents}{#key view.document.id}<BacklinksPanel documents={host.documents} currentNoteId={view.document.id} onopen={note => { backlinksOpen=false; void open(note); }} onclose={() => backlinksOpen=false}/>{/key}{/if}
-        <div class="writing" class:split={mode === 'split'} class:preview-only={mode === 'preview'}>
+        <div class="writing" bind:this={writingContainer} use:watchSplitScroll class:split={mode === 'split'} class:preview-only={mode === 'preview'}>
           {#if mode !== 'preview'}{#if formattedWriting && Surface}{#key view.document.id}<WritingEditor {Surface} body={editorBody} readOnly={historyBlocked} matches={findOpen ? findMatches : []} activeStart={findActiveStart} bind:surface={writingSurface} onchange={change => commitEditorBody(change.body, change.before, change.after, change.key)} onundo={() => applyHistory('undo')} onredo={() => applyHistory('redo')}/>{/key}{:else}<textarea class="editor" bind:this={sourceEditor} aria-label="Note Markdown" onkeydown={editorKeydown} onbeforeinput={editorBeforeInput} oncompositionstart={() => { compositionKey = `composition:${++compositionSequence}`; }} oncompositionend={() => { compositionKey = null; pendingInput = null; }} onkeyup={() => plainNewline = false} readonly={opening || creating || deleting || actionBusy || deletionUncertain || !!mediaKind || dictationOpen || speechSettingsOpen || shareFrozen} value={parsed.body} oninput={editorInput} placeholder="Start with a thought…" spellcheck="true"></textarea>{/if}{/if}
           {#if findOpen && mode !== 'preview' && !formattedWriting && sourceEditor}<FindHighlights editor={sourceEditor} body={editorBody} matches={findMatches} activeStart={findActiveStart}/>{/if}
+          {#if mode === 'split'}<button class="split-scroll-lock" class:locked={splitScrollLocked} aria-label="Synchronize pane scrolling" aria-pressed={splitScrollLocked} title={splitScrollLocked ? 'Unlock scrolling — scroll each pane separately' : 'Lock scrolling — scroll both panes together'} onclick={toggleSplitScroll}>{#if splitScrollLocked}<Lock size={15}/>{:else}<LockOpen size={15}/>{/if}</button>{/if}
           {#if mode !== 'edit'}<div class="preview" bind:this={previewContainer} role="region" aria-label="Note preview" tabindex="0" onwheel={manualReadScroll} ontouchmove={manualReadScroll} onpointerdown={manualReadScroll} onkeydown={manualReadScroll}><Preview onnotelink={id => void openLinkedNote(id)} content={parsed.body} documents={host.documents!} noteId={view.document.id} speechParagraphs={readParagraphs} activeSpeechParagraph={activeReadParagraph} followSpeech={followReading}/></div>{/if}
         </div>
         {#if checkingDeviceVoices}<p role="status">Checking reading voices…</p>{/if}
@@ -1475,6 +1509,10 @@
 </div>
 
 <style>
+  .split-scroll-lock{position:absolute;z-index:3;left:50%;top:50%;transform:translate(-50%,-50%);width:30px;height:30px;display:grid;place-items:center;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--paper);color:var(--soft);box-shadow:0 2px 7px #0002}
+  .split-scroll-lock.locked{color:var(--accent);border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--paper))}
+  @media(pointer:coarse){.split-scroll-lock{width:44px;height:44px}}
+
   .sidebar-help.has-note{display:none}@container(max-width:680px){.sidebar-help.has-note{display:inline-flex}}
   .rich-link-backdrop{position:absolute;inset:0;z-index:90;background:#0006;display:grid;place-items:center;padding:16px}.rich-link-dialog{width:min(440px,100%);background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 20px 70px #0005}.rich-link-dialog input{display:block;width:100%;box-sizing:border-box;margin:8px 0;padding:12px;background:var(--wash);color:var(--ink);border:1px solid var(--line);border-radius:8px;font-size:16px}.rich-link-dialog p{font-size:13px;color:var(--soft)}.rich-link-dialog button{min-height:44px;background:var(--wash);color:var(--ink);padding:8px 14px;border:1px solid var(--line);border-radius:8px;margin-right:8px}
 
