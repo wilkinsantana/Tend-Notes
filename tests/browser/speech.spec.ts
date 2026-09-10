@@ -253,7 +253,15 @@ test('mobile paragraph highlight follows audible buffers, respects pause and dis
   await follow.check();await expect.poll(()=>preview.evaluate(node=>node.scrollTop)).toBeGreaterThan(0);
   await preview.locator('.rendered-markdown').dispatchEvent('wheel',{deltaY:-100});await expect(follow).not.toBeChecked();
   await follow.check();await preview.focus();await page.keyboard.press('PageDown');await expect(follow).not.toBeChecked();
-  await preview.evaluate(node=>node.scrollTop=0);
+  // PageDown starts the browser's own animated scroll. Wait for it to settle
+  // before testing whether the next spoken paragraph moves the viewport.
+  await preview.evaluate(node=>new Promise<void>(resolve=>{
+    let timer:ReturnType<typeof setTimeout>;
+    const done=()=>{node.removeEventListener('scroll',settle);resolve();};
+    const settle=()=>{clearTimeout(timer);timer=setTimeout(done,200);};
+    node.addEventListener('scroll',settle);settle();
+  }));
+  await preview.evaluate(node=>node.scrollTo({top:0,behavior:'instant'}));
   await page.evaluate(()=>{const audio=(window as any).readingAudio;audio.currentTime=9;audio.nodes[8].ended=true;audio.nodes[8].onended?.();});
   await expect(paragraphs.nth(9)).toHaveAttribute('data-notes-reading','true');expect(await preview.evaluate(node=>node.scrollTop)).toBe(0);
   await page.getByRole('button',{name:'Stop read aloud'}).click();
