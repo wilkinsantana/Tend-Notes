@@ -48,5 +48,6 @@ jobs:
         if: gitea.event_name == 'push' && gitea.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+          COMPONENT_RELEASE_SIGNING_KEY: ${{ secrets.COMPONENT_RELEASE_SIGNING_KEY }}
           VERIFIED_SHA: ${{ gitea.sha }}
         run: python3 scripts/publish.py
