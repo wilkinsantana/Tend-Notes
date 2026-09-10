@@ -1,6 +1,6 @@
 <script lang="ts">
   import { LoaderCircle, Pause, Play, Square } from 'lucide-svelte';
-  let {phase, scope, progress, error, follow, onpause, onresume, onstop, onfollowchange}: {
+  let {phase, scope, progress, error, follow, onpause, onresume, onstop, onfollowchange, onusedownloaded}: {
     phase: 'idle'|'starting'|'playing'|'paused';
     scope: string;
     progress: {completed: number; total: number};
@@ -9,6 +9,7 @@
     onpause: () => unknown;
     onresume: () => unknown;
     onstop: () => void;
+    onusedownloaded?: () => unknown;
     onfollowchange: (follow: boolean) => void;
   } = $props();
   const percent = $derived(progress.total > 0 ? Math.min(100, Math.round(progress.completed / progress.total * 100)) : 0);
@@ -17,7 +18,7 @@
 <div class="read-controls" role={error ? 'alert' : 'status'}>
   {#if error}<span>{error}</span>
   {:else}<span class="scope">{scope}</span><span>{phase === 'starting' ? 'Preparing speech…' : phase === 'paused' ? 'Paused' : 'Reading aloud'}{progress.total ? ` · ${percent}% prepared` : ''}</span><label><input type="checkbox" checked={follow} onchange={event => onfollowchange(event.currentTarget.checked)}/> Follow reading</label>{/if}
-  <div>{#if !error && phase === 'starting'}<LoaderCircle class="spin" size={15}/>{:else if !error && phase === 'playing'}<button aria-label="Pause read aloud" title="Pause" onclick={() => void onpause()}><Pause size={15}/></button>{:else if !error && phase === 'paused'}<button aria-label="Resume read aloud" title="Resume" onclick={() => void onresume()}><Play size={15}/></button>{/if}{#if !error || phase !== 'idle'}<button aria-label="Stop read aloud" title="Stop" onclick={onstop}><Square size={14}/></button>{:else}<button onclick={onstop}>Dismiss</button>{/if}</div>
+  <div>{#if error && onusedownloaded}<button onclick={() => void onusedownloaded?.()}>Use downloaded reading</button>{/if}{#if !error && phase === 'starting'}<LoaderCircle class="spin" size={15}/>{:else if !error && phase === 'playing'}<button aria-label="Pause read aloud" title="Pause" onclick={() => void onpause()}><Pause size={15}/></button>{:else if !error && phase === 'paused'}<button aria-label="Resume read aloud" title="Resume" onclick={() => void onresume()}><Play size={15}/></button>{/if}{#if !error || phase !== 'idle'}<button aria-label="Stop read aloud" title="Stop" onclick={onstop}><Square size={14}/></button>{:else}<button onclick={onstop}>Dismiss</button>{/if}</div>
 </div>
 
 <style>

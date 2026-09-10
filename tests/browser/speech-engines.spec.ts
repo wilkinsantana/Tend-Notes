@@ -1,12 +1,13 @@
 import {test, expect, type Page} from '@playwright/test';
 
-type FixtureOptions = {mobile: boolean; phoneVoices?: Array<{id:string;name:string;lang:string}>; mode?: 'device'|'download'; downloadedReady?: boolean; libraryReady?: boolean; rejectDevice?: boolean};
+type FixtureOptions = {mobile: boolean; phoneVoices?: Array<{id:string;name:string;lang:string}>; mode?: 'device'|'download'; downloadedReady?: boolean; libraryReady?: boolean; rejectDevice?: boolean; rejectDownload?: boolean; delayStatus?: boolean};
 
 async function readingFixture(page: Page, options: FixtureOptions) {
   await page.addInitScript(config => {
     const state = {mode:config.mode ?? (config.mobile?'device':'download'), downloadedReady:config.downloadedReady??false, libraryReady:config.libraryReady??config.downloadedReady??false, deviceVoice:'', refreshes:0, libraryCalls:0, statusCalls:0, downloadedVoiceReads:0, generationReads:0, starts:[] as Array<{segments:string[];voice?:string}>, pauses:0, resumes:0, stops:0, aborts:0, nativeDisposed:0, modelInstalls:0, modelRemoves:0, voiceInstalls:0, voiceRemoves:0, syntheses:0};
-    const phoneVoices=config.phoneVoices ?? [];
+    let phoneVoices=config.phoneVoices ?? [];
     const downloaded=[{id:'marius',name:'Marius',locale:'en-US',gender:'male',grade:'A',bytes:100,sha256:''},{id:'alba',name:'Alba',locale:'en-GB',gender:'female',grade:'A',bytes:100,sha256:''}];
+    let releaseStatus:(()=>void)|null=null;
     let active:{finish:()=>void;options:any;stopped:boolean}|null=null;
     const native={isMobile:config.mobile,
       async refreshVoices(){state.refreshes++;return phoneVoices;},listVoices(){return phoneVoices;},
@@ -17,13 +18,13 @@ async function readingFixture(page: Page, options: FixtureOptions) {
       },dispose(){state.nativeDisposed++;},
     };
     const tts:any={supportsSegments:true,native,
-      getReadingMode(){return state.mode;},setReadingMode(mode:'device'|'download'){if(config.rejectDevice&&mode==='device')throw Error('Device voices need a newer host.');state.mode=mode;},getDeviceVoice(){return state.deviceVoice;},setDeviceVoice(id:string){state.deviceVoice=id;},
-      async getInstallState(){state.statusCalls++;return {model:state.downloadedReady?'ready':'not-installed',modelBytes:{installed:state.downloadedReady?100:0,total:100},installedVoices:state.downloadedReady?['marius']:[],defaultVoice:'marius'};},
+      getReadingMode(){return state.mode;},setReadingMode(mode:'device'|'download'){if(config.rejectDownload&&mode==='download')throw Error('Reading preference could not be saved.');if(config.rejectDevice&&mode==='device')throw Error('Device voices need a newer host.');state.mode=mode;},getDeviceVoice(){return state.deviceVoice;},setDeviceVoice(id:string){state.deviceVoice=id;},
+      async getInstallState(){state.statusCalls++;if(config.delayStatus)await new Promise<void>(resolve=>releaseStatus=resolve);return {model:state.downloadedReady?'ready':'not-installed',modelBytes:{installed:state.downloadedReady?100:0,total:100},installedVoices:state.downloadedReady?['marius']:[],defaultVoice:'marius'};},
       async getVoiceLibraryState(){state.libraryCalls++;return {ready:state.libraryReady,bytes:200,voices:downloaded};},
       listVoices(){state.downloadedVoiceReads++;return state.libraryReady?downloaded:[downloaded[0]];},getGenerationSettings(){state.generationReads++;return {temperature:.7};},async installModel(){state.modelInstalls++;state.downloadedReady=true;state.libraryReady=true;},async removeModel(){state.modelRemoves++;},async installVoice(){state.voiceInstalls++;},async removeVoice(){state.voiceRemoves++;},getDefaultVoice(){return 'marius';},setDefaultVoice(){},
       async previewVoice(){return {sampleRate:24000 as const,chunks:0,sampleCount:0};},async synthesize(){state.syntheses++;return {sampleRate:24000 as const,chunks:0,sampleCount:0};},cancel(){},dispose(){},
     };
-    Object.assign(window,{nativeReadingState:state,nativeReadingControl:{finish(){active?.finish();}},notesSpeechFixture:{version:1,tts,
+    Object.assign(window,{nativeReadingState:state,nativeReadingControl:{releaseStatus(){releaseStatus?.();},setVoices(voices:any[]){phoneVoices=voices;},finish(){active?.finish();}},notesSpeechFixture:{version:1,tts,
       async status(){return {installed:false,bytes:0};},async install(){},async remove(){},async start(){return {async stop(){},cancel(){}};},dispose(){},
     }});
   }, options);
@@ -95,7 +96,9 @@ test('a host rejection keeps downloaded mode selected and explains the failure',
 test('mobile with no phone voices gives visible retry feedback and aligned fallback controls',async({page})=>{
   await page.setViewportSize({width:390,height:844});await readingFixture(page,{mobile:true,phoneVoices:[]});await page.goto('/');
   await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();await page.getByRole('button',{name:'Read selection or note aloud',exact:true}).click();
-  const settings=page.getByRole('dialog',{name:'Device speech settings'});
+  await expect(page.getByRole('dialog',{name:'Device speech settings'})).toHaveCount(0);
+  await expect(page.getByText('This browser has no local reading voices available. Use downloaded reading to listen on this device.')).toBeVisible();
+  const settings=await openSettings(page);
   await expect(settings.getByText('No phone voices are available to Notes on this device.')).toBeVisible();
   const retry=settings.getByRole('button',{name:'Retry phone voices'}),fallback=settings.getByRole('button',{name:'Use downloaded reading'});
   await expect(fallback).toBeVisible();await retry.click();await expect(settings.getByText('Checked just now. This browser did not return any local phone voices.')).toBeVisible();
@@ -123,4 +126,61 @@ test('downloaded voice library is discoverable, explicit, and keeps technical la
   await library.getByRole('button',{name:/Alba.*Available/}).click();await expect(chooser).toHaveValue('alba');await expect(settings.getByRole('button',{name:'Download voice',exact:true})).toBeVisible();
   expect(await page.evaluate(()=>(window as any).nativeReadingState)).toMatchObject({modelInstalls:1,voiceInstalls:0});
   const before=await page.evaluate(()=>(window as any).nativeReadingState.libraryCalls);await library.getByRole('button',{name:'Refresh list'}).click();await expect.poll(()=>page.evaluate(()=>(window as any).nativeReadingState.libraryCalls)).toBeGreaterThan(before);await page.screenshot({path:'test-results/speech-settings-voice-library.png'});
+});
+
+
+test('read aloud retries a previously empty voice list and starts a late device voice',async({page})=>{
+  await readingFixture(page,{mobile:false,mode:'device'});await page.goto('/');
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).nativeReadingState.refreshes)).toBeGreaterThan(0);
+  await page.evaluate(()=>(window as any).nativeReadingControl.setVoices([{id:'late',name:'Late system voice',lang:'en-US'}]));
+  await page.getByRole('button',{name:'Read selection or note aloud',exact:true}).click();
+  await expect(page.locator('[data-notes-reading]')).toHaveCount(1);
+  await expect(page.getByRole('dialog',{name:'Device speech settings'})).toHaveCount(0);
+  expect(await page.evaluate(()=>(window as any).nativeReadingState.starts[0].voice)).toBe('late');
+  await page.getByRole('button',{name:'Stop read aloud'}).click();
+});
+
+test('unavailable device reading offers one-click installed reading without a popup loop or download',async({page})=>{
+  await readingFixture(page,{mobile:false,mode:'device',downloadedReady:true});await page.goto('/');
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:'Read selection or note aloud',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Device speech settings'})).toHaveCount(0);
+  await page.getByRole('button',{name:'Use downloaded reading',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).nativeReadingState.syntheses)).toBe(1);
+  expect(await page.evaluate(()=>(window as any).nativeReadingState)).toMatchObject({mode:'download',modelInstalls:0,voiceInstalls:0});
+});
+
+test('switching back to device voices refreshes the catalog',async({page})=>{
+  await readingFixture(page,{mobile:false,mode:'download',downloadedReady:true});await page.goto('/');
+  const settings=await openSettings(page);
+  await page.evaluate(()=>(window as any).nativeReadingControl.setVoices([{id:'late',name:'New system voice',lang:'fr-FR'}]));
+  await settings.getByRole('button',{name:'Device voices',exact:true}).click();
+  await expect(settings.getByRole('combobox',{name:'Device voice',exact:true})).toHaveValue('late');
+  await settings.getByRole('button',{name:'Preview',exact:true}).click();
+  expect(await page.evaluate(()=>(window as any).nativeReadingState.starts[0].voice)).toBe('late');
+});
+
+
+test('dismissing a pending downloaded fallback prevents late playback',async({page})=>{
+  await readingFixture(page,{mobile:false,mode:'device',downloadedReady:true,delayStatus:true});await page.goto('/');
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:'Read selection or note aloud',exact:true}).click();
+  await page.getByRole('button',{name:'Use downloaded reading',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).nativeReadingState.statusCalls)).toBe(1);
+  await page.getByRole('button',{name:'Dismiss',exact:true}).click();
+  await page.evaluate(()=>(window as any).nativeReadingControl.releaseStatus());
+  await expect(page.getByText('Checking reading voices…')).toHaveCount(0);
+  expect(await page.evaluate(()=>(window as any).nativeReadingState.syntheses)).toBe(0);
+  await expect(page.getByRole('dialog',{name:'Device speech settings'})).toHaveCount(0);
+});
+
+
+test('downloaded fallback explains a rejected provider switch',async({page})=>{
+  await readingFixture(page,{mobile:false,mode:'device',downloadedReady:true,rejectDownload:true});await page.goto('/');
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click();
+  await page.getByRole('button',{name:'Read selection or note aloud',exact:true}).click();
+  await page.getByRole('button',{name:'Use downloaded reading',exact:true}).click();
+  await expect(page.getByRole('alert')).toContainText('Reading preference could not be saved.');
+  expect(await page.evaluate(()=>(window as any).nativeReadingState)).toMatchObject({mode:'device',syntheses:0,modelInstalls:0});
 });

@@ -213,6 +213,8 @@
   let readPhase = $state<'idle'|'starting'|'playing'|'paused'>('idle');
   let readProgress = $state({completed: 0, total: 0});
   let readError = $state('');
+  let checkingDeviceVoices = $state(false);
+  let deviceReadingUnavailable = $state(false);
   let readScope = $state('This note');
   let readParagraphs = $state<string[]>([]);
   let activeReadParagraph = $state<number|null>(null);
@@ -508,10 +510,49 @@
     readProgress = {completed: 0, total: 0};
     if (nextError) readError = nextError;
   }
+  async function useDownloadedReading() {
+    const tts = host.speech?.tts;
+    if (!tts || checkingDeviceVoices) return;
+    const target = view?.document.id;
+    const sequence = readSequence;
+    const sameRequest = () => alive && host.speech?.tts === tts && view?.document.id === target && readSequence === sequence;
+    const current = () => sameRequest() && readingMode === 'download';
+    checkingDeviceVoices = true;
+    try {
+      tts.setReadingMode?.('download'); readingMode = 'download';
+      const status = await tts.getInstallState();
+      if (!current()) return;
+      ttsState = status; deviceReadingUnavailable = false; readError = '';
+    } catch (cause) { if (sameRequest()) readError = message(cause); return; }
+    finally { checkingDeviceVoices = false; }
+    if (current()) await startReadAloud();
+  }
   async function startReadAloud() {
     const tts = host.speech?.tts;
-    if (!tts || !readAloudReady) { openSpeechSettings('tts'); return; }
-    if (!view || dictationController?.active || readPhase !== 'idle') return;
+    if (!view || dictationController?.active || readPhase !== 'idle' || checkingDeviceVoices) return;
+    if (!tts) { openSpeechSettings('tts'); return; }
+    if (readingMode === 'device' && deviceNative(tts) && !nativeVoices.length) {
+      const target = view.document.id;
+      const sequence = readSequence;
+      checkingDeviceVoices = true; readError = ''; deviceReadingUnavailable = false;
+      try {
+        const voices = await deviceNative(tts)!.refreshVoices();
+        if (!alive || host.speech?.tts !== tts || view?.document.id !== target || sequence !== readSequence || readingMode !== 'device') return;
+        nativeVoices = [...voices];
+        if (!voices.length) {
+          deviceReadingUnavailable = true;
+          readError = 'This browser has no local reading voices available. Use downloaded reading to listen on this device.';
+          return;
+        }
+      } catch (cause) {
+        if (alive && view?.document.id === target && sequence === readSequence) {
+          deviceReadingUnavailable = true; readError = message(cause);
+        }
+        return;
+      } finally { checkingDeviceVoices = false; }
+    }
+    if (!readAloudReady) { openSpeechSettings('tts'); return; }
+    deviceReadingUnavailable = false;
     const targetId = view.document.id;
     let source = editorBody;
     let scope = 'This note';
@@ -1365,7 +1406,7 @@
 {#snippet removeColumn()}<button class="icon" title="Remove table column" aria-label="Remove table column" onclick={() => writingSurface?.table('delete-column')}><Trash2 size={16}/></button>{/snippet}
 {#snippet tool20()}<button class="icon" title="PDF · upload attachment" aria-label="Attach PDF" onclick={() => openMedia('document')}><FileText size={17}/></button>{/snippet}
 {#snippet dictateTool()}{#if canDictate}<button class="icon" class:dictating={dictationActive} title={speechInstalled ? 'Dictate text · review before inserting' : 'Set up dictation'} aria-label="Dictate text" aria-expanded={dictationOpen} onclick={openDictation}><SpeechIcon size={18}/></button>{/if}{/snippet}
-{#snippet readAloudTool()}{#if host.speech?.tts}<button class="icon" class:dictating={readPhase !== 'idle'} title={readAloudReady ? 'Read selection or note aloud' : 'Set up read-aloud'} aria-label="Read selection or note aloud" onpointerdown={event => event.preventDefault()} onclick={() => void startReadAloud()} disabled={readPhase !== 'idle' || dictationActive}><Volume2 size={18}/></button>{/if}{/snippet}
+{#snippet readAloudTool()}{#if host.speech?.tts}<button class="icon" class:dictating={readPhase !== 'idle'} title={readAloudReady ? 'Read selection or note aloud' : 'Set up read-aloud'} aria-label="Read selection or note aloud" onpointerdown={event => event.preventDefault()} onclick={() => void startReadAloud()} disabled={readPhase !== 'idle' || dictationActive || checkingDeviceVoices} aria-busy={checkingDeviceVoices}><Volume2 size={18}/></button>{/if}{/snippet}
 {#snippet voiceNoteTool()}{#if canInsertAudio}<button class="icon" title="Voice note · upload or record audio" aria-label="Insert audio" onclick={() => openMedia('audio')}><Mic size={17}/></button>{/if}{/snippet}
 {#snippet speechSettingsTool()}{#if speechAvailable}<button class="icon" title="Audio settings · models and voices" aria-label="Device speech settings" aria-expanded={speechSettingsOpen} onclick={() => openSpeechSettings()}><Settings2 size={17}/></button>{/if}{/snippet}
         {#if mode !== 'preview' || host.speech?.tts}<div class="formatting"><ResponsiveToolbar groups={[
@@ -1386,7 +1427,8 @@
           {#if findOpen && mode !== 'preview' && !formattedWriting && sourceEditor}<FindHighlights editor={sourceEditor} body={editorBody} matches={findMatches} activeStart={findActiveStart}/>{/if}
           {#if mode !== 'edit'}<div class="preview" bind:this={previewContainer} role="region" aria-label="Note preview" tabindex="0" onwheel={manualReadScroll} ontouchmove={manualReadScroll} onpointerdown={manualReadScroll} onkeydown={manualReadScroll}><Preview onnotelink={id => void openLinkedNote(id)} content={parsed.body} documents={host.documents!} noteId={view.document.id} speechParagraphs={readParagraphs} activeSpeechParagraph={activeReadParagraph} followSpeech={followReading}/></div>{/if}
         </div>
-        {#if readPhase !== 'idle' || readError}<ReadAloudControls phase={readPhase} scope={readScope} progress={readProgress} error={readError} follow={followReading} onfollowchange={value => followReading = value} onpause={pauseReadAloud} onresume={resumeReadAloud} onstop={() => { readError = ''; stopReadAloud(); }}/>{/if}
+        {#if checkingDeviceVoices}<p role="status">Checking reading voices…</p>{/if}
+        {#if readPhase !== 'idle' || readError}<ReadAloudControls onusedownloaded={deviceReadingUnavailable && !checkingDeviceVoices ? useDownloadedReading : undefined} phase={readPhase} scope={readScope} progress={readProgress} error={readError} follow={followReading} onfollowchange={value => followReading = value} onpause={pauseReadAloud} onresume={resumeReadAloud} onstop={() => { readError = ''; stopReadAloud(); }}/>{/if}
         <footer><span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span><button class="save-status" onclick={() => void save()} disabled={view.saving || !view.dirty || view.conflict}>{#if view.saving}<LoaderCircle size={13} class="spin"/> Saving…{:else if view.dirty}<span class="unsaved-dot"></span>{view.error ? 'Not saved' : 'Save now'}{:else}<Check size={14}/> All changes saved{/if}</button></footer>
       {:else}
         <div class="welcome"><span class="welcome-icon"><BookOpen size={37} strokeWidth={1.4}/></span><span class="eyebrow">YOUR OWN QUIET CORNER</span>{#if !libraries.length}<h1>Make room for an idea.</h1><p>Tend prepares a protected home for your notes on your server. Start writing, then choose a backup destination whenever you’re ready.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}><FolderOpen size={17}/> Set up your notebook</button>{:else if hasLoadedNotes}<h1>Pick up where you left off.</h1><p>Return to a recent note, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => void continueWriting()}><PenLine size={17}/> Continue writing</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if facets.total > 0}<h1>No notes match these filters.</h1><p>Clear the filters to continue writing, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => { query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; void loadList(); }}>Clear filters</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if !selectedLibrary?.canCreate}<h1>Make room for an idea.</h1><p>Choose a connected notebook or let Tend prepare a new one to start writing.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}>Set up your notebook</button>{:else}<h1>Make room for an idea.</h1><p>A quick thought. A plan taking shape. Something worth remembering.<br/>Keep it here, in your own words.</p><button class="primary" onclick={() => beginCreate()}><Plus size={17}/> Write your first note</button><button class="quiet" onclick={() => filePicker?.click()}><Upload size={14}/> Bring a Markdown file</button>{/if}<small>Simple to write. Easy to take with you.</small></div>
