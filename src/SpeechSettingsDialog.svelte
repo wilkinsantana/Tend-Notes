@@ -1,5 +1,9 @@
+<script module lang="ts">
+  // Scope browsing preferences to the host capability, never another account.
+  const pickerMemory = new WeakMap<object, {voice: string; language: string}>();
+</script>
 <script lang="ts">
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { Check, Download, LoaderCircle, Play, Speech as SpeechIcon, Settings2, Trash2, Volume2, X } from 'lucide-svelte';
   import type { Speech, SpeechInstallProgress, SpeechNativeReading, SpeechNativeSession, SpeechNativeVoice, SpeechTts, SpeechVoice } from './host';
   import { createSpeechPlayback } from './speechPlayback';
@@ -13,7 +17,17 @@
   const native = $derived.by<SpeechNativeReading|null>(() => switchableNative(tts));
   let engineRevision = $state(0);
   const voices = $derived.by(() => { engineRevision; return readingMode === 'download' ? tts?.listVoices() ?? [] : []; });
-  let selectedVoice = $state('');
+  const pickerOwner = untrack(() => speech.tts);
+  const rememberedPicker = pickerOwner ? pickerMemory.get(pickerOwner) : undefined;
+  let selectedVoice = $state(rememberedPicker?.voice ?? '');
+  let selectedLanguage = $state(rememberedPicker?.language ?? '');
+  const languageCode = (locale: string) => locale.split(/[-_]/)[0].toLowerCase();
+  const voiceLanguages = $derived([...new Set(voices.map(voice => languageCode(voice.locale)))].sort());
+  const filteredVoices = $derived(voices.filter(voice => !selectedLanguage || languageCode(voice.locale) === selectedLanguage));
+  function languageName(code: string) { try { return new Intl.DisplayNames(['en'], {type:'language'}).of(code) ?? code; } catch { return code; } }
+  function selectLanguage() {
+    if (!filteredVoices.some(voice => voice.id === selectedVoice)) selectedVoice = filteredVoices[0]?.id ?? '';
+  }
   let temperature = $state(0.7);
   const generationSettings = $derived.by(() => { engineRevision; return readingMode === 'download' ? tts?.getGenerationSettings?.() ?? null : null; });
   let installed = $state(false), bytes = $state(0), received = $state(0), total = $state(0);
@@ -54,7 +68,7 @@
   async function refreshTts() {
     if (!tts) { ttsLoading = false; onttsstatus(null); return; }
     ttsLoading = true; ttsError = '';
-    try { const status = await tts.getInstallState(); if (alive) { engineRevision++; ttsState = status; temperature = tts.getGenerationSettings?.()?.temperature ?? 0.7; const available=tts.listVoices(); if(!available.some(voice=>voice.id===selectedVoice))selectedVoice=available.some(voice=>voice.id===status.defaultVoice)?status.defaultVoice:available[0]?.id??''; onttsstatus(status); } }
+    try { const status = await tts.getInstallState(); if (alive) { engineRevision++; ttsState = status; temperature = tts.getGenerationSettings?.()?.temperature ?? 0.7; const available=tts.listVoices(); if(selectedLanguage && !available.some(voice=>languageCode(voice.locale)===selectedLanguage))selectedLanguage=''; const candidates=available.filter(voice=>!selectedLanguage||languageCode(voice.locale)===selectedLanguage); if(!candidates.some(voice=>voice.id===selectedVoice))selectedVoice=candidates.some(voice=>voice.id===status.defaultVoice)?status.defaultVoice:candidates[0]?.id??''; onttsstatus(status); } }
     catch (cause) { if (alive) ttsError = cause instanceof Error ? cause.message : 'Read-aloud status is unavailable. Try again.'; }
     finally { if (alive) ttsLoading = false; }
   }
@@ -124,7 +138,7 @@
     const items=new Map<string,SpeechVoice>();
     for(const voice of voices)items.set(voice.id,voice);
     for(const voice of libraryState?.voices??[])items.set(voice.id,voice);
-    return [...items.values()];
+    return [...items.values()].filter(voice=>!selectedLanguage||languageCode(voice.locale)===selectedLanguage);
   }
   async function installModel() {
     if (!tts || allBusy) return;
@@ -157,7 +171,7 @@
     try { tts.setDefaultVoice(selectedVoice); if (ttsState) { ttsState = {...ttsState, defaultVoice: selectedVoice}; onttsstatus(ttsState); } }
     catch (cause) { ttsError = cause instanceof Error ? cause.message : 'The default voice could not be changed.'; }
   }
-  async function privateVoiceChanged(voice?: {id:string}) { await refreshTts(); if(alive&&voice)selectedVoice=voice.id; }
+  async function privateVoiceChanged(voice?: {id:string}) { await refreshTts(); if(alive&&voice){selectedVoice=voice.id; const selected=tts?.listVoices().find(item=>item.id===voice.id); if(selectedLanguage && selected && languageCode(selected.locale)!==selectedLanguage)selectedLanguage=languageCode(selected.locale);} }
   async function closeVoiceDialog(){voiceDialogOpen=false;await refreshTts();await tick();voiceDialogTrigger?.focus();}
   function stopTts(message = '') {
     const request = ttsController; ttsController = null; request?.abort(); tts?.cancel(); previewPlayback?.stop(); previewPlayback = null; nativePreview?.stop(); nativePreview = null;
@@ -197,7 +211,8 @@
     node.addEventListener('keydown', key); return {destroy() { node.removeEventListener('keydown', key); previous?.focus(); }};
   }
   function closeDialog() { if (blockingBusy) return; stopTts(); onclose(); }
-  onMount(() => { void refresh(); void (async()=>{await refreshNative();if(readingMode === 'download') await refreshTts();else {ttsLoading = false;onttsstatus(null);}})(); });
+  onMount(() => { void refresh(); if(readingMode === 'download') void refreshTts(); else { ttsLoading=false; onttsstatus(null); void refreshNative(); } });
+  onDestroy(() => { if(pickerOwner && tts === pickerOwner) pickerMemory.set(pickerOwner, {voice:selectedVoice,language:selectedLanguage}); });
   onDestroy(() => { alive = false; controller?.abort(); stopTts(); });
 </script>
 
@@ -224,7 +239,7 @@
     {:else if !ttsLoading && ttsState?.model !== 'ready'}<p class="details">Set up private reading on this device, then choose a voice. Nothing downloads until you ask.</p><button class="download-action" onclick={() => void installModel()} disabled={allBusy}><Download size={15}/> Set up reading {ttsState?.modelBytes.total ? `· ${size(ttsState.modelBytes.total)}` : ''}</button>
     {:else if ttsState?.model === 'ready'}
       <div class="voice-library-head"><div><h4>Downloaded voice</h4><p>Choose one here, or browse the full voice library.</p></div><button aria-expanded={catalogOpen} aria-controls="voice-catalog" onclick={toggleCatalog} disabled={blockingBusy}>{catalogOpen?'Hide voices':'Browse voices'}</button></div>
-      <div class="voice-fields"><label for="speech-language">Language<select id="speech-language" disabled><option>English</option></select><small>English is the only downloaded language currently supported.</small></label><label for="speech-voice">Choose a voice<select id="speech-voice" bind:value={selectedVoice} disabled={!!ttsTask}>{#each voices as voice}<option value={voice.id}>{voice.name} · {voice.locale} · {ttsState.installedVoices.includes(voice.id) ? 'Downloaded' : 'Available'}</option>{/each}</select></label></div>
+      <div class="voice-fields"><label for="speech-language">Language<select id="speech-language" aria-label="Language" bind:value={selectedLanguage} onchange={selectLanguage} disabled={!!ttsTask}><option value="">All available languages</option>{#each voiceLanguages as language}<option value={language}>{languageName(language)}</option>{/each}</select><small>Languages shown are supported by this voice library.</small></label><label for="speech-voice">Choose a voice<select id="speech-voice" bind:value={selectedVoice} disabled={!!ttsTask}>{#each filteredVoices as voice}<option value={voice.id}>{voice.name} · {voice.locale} · {ttsState.installedVoices.includes(voice.id) ? 'Downloaded' : 'Available'}</option>{/each}</select></label></div>
       {#if catalogOpen}<div id="voice-catalog" class="voice-catalog" role="region" aria-label="Voice library"><div class="catalog-head"><strong>Voice library</strong><button onclick={()=>void refreshVoiceLibrary()} disabled={catalogLoading||blockingBusy}>{#if catalogLoading}<LoaderCircle class="spin" size={14}/>{/if} Refresh list</button></div>
         {#if catalogError}<p class="error" role="alert">{catalogError}</p>{:else if catalogLoading && !libraryState}<p class="details" role="status">Checking available voices…</p>{:else if libraryState}
           {#if !libraryState.ready}<div class="library-setup"><div><strong>More voices are ready to browse</strong><p>Prepare the current voice library once. Your existing reading download stays in place.</p></div><button class="download-action inline-primary" onclick={()=>void installModel()} disabled={allBusy}><Download size={15}/> Prepare voice library{libraryState.bytes?` · ${size(libraryState.bytes)}`:''}</button></div>{/if}

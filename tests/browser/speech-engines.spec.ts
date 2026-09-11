@@ -1,12 +1,13 @@
 import {test, expect, type Page} from '@playwright/test';
 
-type FixtureOptions = {mobile: boolean; phoneVoices?: Array<{id:string;name:string;lang:string}>; mode?: 'device'|'download'; downloadedReady?: boolean; libraryReady?: boolean; rejectDevice?: boolean; rejectDownload?: boolean; delayStatus?: boolean};
+type FixtureOptions = {mobile: boolean; phoneVoices?: Array<{id:string;name:string;lang:string}>; mode?: 'device'|'download'; downloadedReady?: boolean; libraryReady?: boolean; rejectDevice?: boolean; rejectDownload?: boolean; delayStatus?: boolean; multilingual?: boolean};
 
 async function readingFixture(page: Page, options: FixtureOptions) {
   await page.addInitScript(config => {
     const state = {mode:config.mode ?? (config.mobile?'device':'download'), downloadedReady:config.downloadedReady??false, libraryReady:config.libraryReady??config.downloadedReady??false, deviceVoice:'', refreshes:0, libraryCalls:0, statusCalls:0, downloadedVoiceReads:0, generationReads:0, starts:[] as Array<{segments:string[];voice?:string}>, pauses:0, resumes:0, stops:0, aborts:0, nativeDisposed:0, modelInstalls:0, modelRemoves:0, voiceInstalls:0, voiceRemoves:0, syntheses:0};
     let phoneVoices=config.phoneVoices ?? [];
     const downloaded=[{id:'marius',name:'Marius',locale:'en-US',gender:'male',grade:'A',bytes:100,sha256:''},{id:'alba',name:'Alba',locale:'en-GB',gender:'female',grade:'A',bytes:100,sha256:''}];
+    if(config.multilingual)downloaded.push({id:'french',name:'French fixture',locale:'fr-FR',gender:'female',grade:'A',bytes:100,sha256:''});
     let releaseStatus:(()=>void)|null=null;
     let active:{finish:()=>void;options:any;stopped:boolean}|null=null;
     const native={isMobile:config.mobile,
@@ -24,7 +25,7 @@ async function readingFixture(page: Page, options: FixtureOptions) {
       listVoices(){state.downloadedVoiceReads++;return state.libraryReady?downloaded:[downloaded[0]];},getGenerationSettings(){state.generationReads++;return {temperature:.7};},async installModel(){state.modelInstalls++;state.downloadedReady=true;state.libraryReady=true;},async removeModel(){state.modelRemoves++;},async installVoice(){state.voiceInstalls++;},async removeVoice(){state.voiceRemoves++;},getDefaultVoice(){return 'marius';},setDefaultVoice(){},
       async previewVoice(){return {sampleRate:24000 as const,chunks:0,sampleCount:0};},async synthesize(){state.syntheses++;return {sampleRate:24000 as const,chunks:0,sampleCount:0};},cancel(){},dispose(){},
     };
-    Object.assign(window,{nativeReadingState:state,nativeReadingControl:{releaseStatus(){releaseStatus?.();},setVoices(voices:any[]){phoneVoices=voices;},finish(){active?.finish();}},notesSpeechFixture:{version:1,tts,
+    Object.assign(window,{nativeReadingState:state,nativeReadingControl:{replaceDownloaded(voices:any[]){downloaded.splice(0,downloaded.length,...voices);},releaseStatus(){releaseStatus?.();},setVoices(voices:any[]){phoneVoices=voices;},finish(){active?.finish();}},notesSpeechFixture:{version:1,tts,
       async status(){return {installed:false,bytes:0};},async install(){},async remove(){},async start(){return {async stop(){},cancel(){}};},dispose(){},
     }});
   }, options);
@@ -183,4 +184,26 @@ test('downloaded fallback explains a rejected provider switch',async({page})=>{
   await page.getByRole('button',{name:'Use downloaded reading',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('Reading preference could not be saved.');
   expect(await page.evaluate(()=>(window as any).nativeReadingState)).toMatchObject({mode:'device',syntheses:0,modelInstalls:0});
+});
+
+
+test('downloaded picker remembers selection and language without rescanning device voices on reopen',async({page})=>{
+ await readingFixture(page,{mobile:false,mode:'download',downloadedReady:true,multilingual:true});await page.goto('/');
+ let settings=await openSettings(page);
+ await settings.getByRole('combobox',{name:'Language',exact:true}).selectOption('fr');
+ await expect(settings.getByRole('combobox',{name:'Choose a voice',exact:true})).toHaveValue('french');
+ const before=await page.evaluate(()=>(window as any).nativeReadingState.refreshes);
+ await settings.getByRole('button',{name:'Close speech settings'}).click();settings=await openSettings(page);
+ await expect(settings.getByRole('combobox',{name:'Language',exact:true})).toHaveValue('fr');
+ await expect(settings.getByRole('combobox',{name:'Choose a voice',exact:true})).toHaveValue('french');
+ expect(await page.evaluate(()=>(window as any).nativeReadingState.refreshes)).toBe(before);
+ expect(await page.evaluate(()=>(window as any).nativeReadingState)).toMatchObject({modelInstalls:0,voiceInstalls:0});
+});
+
+
+test('remembered language selects a visible replacement when its previous voice disappears',async({page})=>{
+ await readingFixture(page,{mobile:false,mode:'download',downloadedReady:true,multilingual:true});await page.goto('/');
+ let settings=await openSettings(page);await settings.getByRole('combobox',{name:'Language',exact:true}).selectOption('fr');await settings.getByRole('button',{name:'Close speech settings'}).click();
+ await page.evaluate(()=>(window as any).nativeReadingControl.replaceDownloaded([{id:'marius',name:'Marius',locale:'en-US',bytes:100},{id:'new-french',name:'New French fixture',locale:'fr-FR',bytes:100}]));
+ settings=await openSettings(page);await expect(settings.getByRole('combobox',{name:'Language',exact:true})).toHaveValue('fr');await expect(settings.getByRole('combobox',{name:'Choose a voice',exact:true})).toHaveValue('new-french');
 });

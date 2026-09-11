@@ -454,7 +454,7 @@
     const native = deviceNative(tts);
     let resolvedMode: 'device'|'download' = native ? (tts?.getReadingMode?.() ?? 'device') : 'download';
     try {
-      if (tts && native) {
+      if (tts && native && resolvedMode === 'device') {
         const voices = await native.refreshVoices();
         resolvedMode = tts.getReadingMode?.() ?? 'device';
         if (alive && host.speech === speech) {
