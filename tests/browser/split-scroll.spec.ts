@@ -14,6 +14,12 @@ test('split scroll lock defaults off, links either pane, and unlocks cleanly',as
   await scrollTo(source,.35);await page.waitForTimeout(100);expect(await fraction(preview)).toBe(0);
   await lock.click();await expect(lock).toHaveAttribute('aria-pressed','true');
   await expect.poll(async()=>Math.abs(await fraction(source)-await fraction(preview))).toBeLessThan(.005);
+  await source.fill((await source.inputValue())+'\nAnother thought.');
+  await expect(page.getByRole('button',{name:'All changes saved',exact:true})).toBeVisible();
+  await expect(lock).toHaveAttribute('aria-pressed','true');
+  await page.getByRole('button',{name:'Split view',exact:true}).click();
+  await page.getByRole('button',{name:'Split view',exact:true}).click();
+  await expect(lock).toHaveAttribute('aria-pressed','true');
   await scrollTo(preview,.75);await expect.poll(async()=>Math.abs(await fraction(source)-.75)).toBeLessThan(.005);
   await scrollTo(source,1);await expect.poll(()=>fraction(preview)).toBeGreaterThan(.995);
   const lb=await lock.boundingBox(),pb=await preview.boundingBox();expect(Math.abs(lb!.x+lb!.width/2-pb!.x)).toBeLessThan(2);

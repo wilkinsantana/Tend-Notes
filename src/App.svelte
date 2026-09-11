@@ -238,7 +238,7 @@
   let splitScrollLocked = $state(false);
   let writingContainer = $state<HTMLDivElement>();
   let syncedScroll = new WeakMap<HTMLElement, number>();
-  $effect(() => { view?.document.id; mode; splitScrollLocked = false; syncedScroll = new WeakMap(); });
+  $effect(() => { view?.document.id; mode; syncedScroll = new WeakMap(); });
   function syncSplitScroll(source: HTMLElement) {
     if (!splitScrollLocked || mode !== 'split' || !writingContainer || !previewContainer) return;
     const left = writingContainer.querySelector<HTMLElement>('textarea.editor, .notes-rich-editor');
