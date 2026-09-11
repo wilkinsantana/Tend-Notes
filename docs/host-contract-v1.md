@@ -385,8 +385,8 @@ in Preview and dictation/voice recording only when editing a writable note.
 current engine. `setGenerationSettings?({temperature})` validates and stores
 that device preference; the current Pocket runtime supports 0.1–1.2 with a 0.7
 default. The host injects the preference into synthesis and voice previews.
-`tts.getCacheKey?()` supplies an opaque generation identity, including engine
-and effective settings, for Notes' memory-only replay keys. Hosts without these
+`tts.getCacheKey?(voiceId)` supplies an opaque generation identity for the
+explicitly requested voice, including its language model and effective settings, for Notes' memory-only replay keys. Hosts without these
 methods retain the earlier interface. No settings control is shown unless the
 host implements it, and changing a preference never downloads speech assets.
 
@@ -422,3 +422,30 @@ existing `installModel` action after displaying its size; individual voice
 downloads remain explicit. Hosts without discovery retain the ordinary picker.
 Language filtering must reflect actual catalog/native voice languages, never
 relabel an English model as multilingual.
+
+
+### Optional downloaded language packs
+
+`tts.languages` is an additive capability; older hosts keep their existing voice
+library. Its methods are:
+
+- `list()` returns fixed `{id, name, bytes}` descriptors without downloading.
+- `getSelected()` / `select(id)` read or explicitly change the remembered reading
+  language. Selection stops current speech and never downloads a model.
+- `getState(id)` returns model readiness, installed/total bytes, installed voice
+  IDs, available voices, and an optional error without changing selection.
+- `install(id, {signal, onProgress})` downloads only the requested language and
+  any missing shared runtime after an explicit user action.
+- `remove(id)` removes only that language's model and public voices, preserving
+  other languages, shared runtime and personal voice records.
+
+The ordinary install status and library reflect the selected language. Notes
+uses the pack API for setup/removal when present; legacy `installModel` retains
+its original English setup meaning. Voice IDs are opaque and identify the
+correct language even during explicit previews. The host keeps a default voice
+per language; inspecting readiness or downloading another voice cannot change
+that preference. Missing downloads do not erase the saved choice.
+
+Notes shows only languages advertised by the host, with no implicit multilingual
+claims. Current personal-voice creation remains English-only and is hidden for
+other packs. English personal voices remain available when switching back.

@@ -52,8 +52,8 @@ export interface SpeechCapture {
 export interface SpeechVoice {
   id: string;
   name: string;
-  locale: 'en-US' | 'en-GB';
-  gender: 'female' | 'male';
+  locale: string;
+  gender: 'female' | 'male' | 'unspecified';
   grade: string;
   bytes: number;
   sha256: string;
@@ -103,10 +103,19 @@ export interface SpeechPrivateVoices {
   create(input: {label: string; wav: ArrayBuffer; signal?: AbortSignal}): Promise<SpeechPrivateVoice>;
   remove(id: string): Promise<void>;
 }
+export interface SpeechLanguages {
+  list(): readonly {id: string; name: string; bytes: number}[];
+  getSelected(): string;
+  select(id: string): void;
+  getState(id: string): Promise<{model: 'not-installed' | 'installing' | 'ready' | 'error'; modelBytes: {installed: number; total: number}; installedVoices: string[]; voices: readonly SpeechVoice[]; error?: string}>;
+  install(id: string, options?: {signal?: AbortSignal; onProgress?: (progress: SpeechInstallProgress) => void}): Promise<void>;
+  remove(id: string): Promise<void>;
+}
 export interface SpeechTts {
   readonly supportsSegments?: boolean;
   readonly native?: SpeechNativeReading;
   readonly privateVoices?: SpeechPrivateVoices;
+  readonly languages?: SpeechLanguages;
   getVoiceLibraryState?(): Promise<{ready: boolean; bytes: number; voices: readonly SpeechVoice[]}>;
   getReadingMode?(): 'device' | 'download';
   setReadingMode?(mode: 'device' | 'download'): void;
@@ -117,7 +126,7 @@ export interface SpeechTts {
   setEngine?(id: string): void;
   getGenerationSettings?(): {temperature: number} | null;
   setGenerationSettings?(settings: {temperature: number}): void;
-  getCacheKey?(): string;
+  getCacheKey?(voiceId?: string): string;
   getInstallState(): Promise<{model: 'not-installed' | 'installing' | 'ready' | 'error'; modelBytes: {installed: number; total: number}; installedVoices: string[]; defaultVoice: string; error?: string}>;
   installModel(options?: {signal?: AbortSignal; onProgress?: (progress: SpeechInstallProgress) => void}): Promise<void>;
   removeModel(): Promise<void>;

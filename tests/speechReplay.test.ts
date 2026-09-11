@@ -71,3 +71,13 @@ test('aggregate paragraph cache stays within budget and cancelled partial paragr
   await expect(cache.speak(tts,{text:'Delta',signal:request.signal,onChunk:async()=>{request.abort();}})).rejects.toThrow();
   await cache.speak(tts,{text:'Delta',onChunk});expect(count).toBe(4);
 });
+
+test('replay asks for the explicit voice model identity instead of the selected language',async()=>{
+  const f=fixture(), cache=new SpeechReplay();const requested:Array<string|undefined>=[];
+  let revision='spanish-model-v1';
+  f.tts.getCacheKey=voice=>{requested.push(voice);return revision;};
+  const options={text:'Hola.',voice:'es-example',onChunk:async()=>{}};
+  await cache.speak(f.tts,options);await cache.speak(f.tts,options);
+  expect(requested).toEqual(['es-example','es-example']);expect(f.calls()).toBe(1);
+  revision='spanish-model-v2';await cache.speak(f.tts,options);expect(f.calls()).toBe(2);
+});

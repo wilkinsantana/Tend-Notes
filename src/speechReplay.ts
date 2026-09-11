@@ -21,7 +21,7 @@ export class SpeechReplay {
     // Old hosts still benefit from whole-reading replay; new hosts batch all
     // missing paragraphs into ONE worker/model load, not one per paragraph.
     const paragraphs = speechReplayParagraphs(tts, options.text);
-    const cacheKey = tts.getCacheKey?.() ?? '';
+    const cacheKey = tts.getCacheKey?.(voice) ?? '';
     const keys = paragraphs.map(text => JSON.stringify([text, voice, options.speed ?? 1, cacheKey]));
     const wanted = new Set(keys);
     for (const [key, entry] of this.cached) if (!preserveOtherParagraphs && !wanted.has(key)) { this.bytes -= entry.bytes; this.cached.delete(key); }
