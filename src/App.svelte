@@ -1346,14 +1346,14 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- Keyboard shortcuts belong to this extension's focused panel. -->
-<div class="notes-app" data-shortcut-scope use:selectionFocus class:sidebar-hidden={!sidebar || focusMode || todoOpen || trashOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="TEND Notes" tabindex="-1">
+<div class="notes-app" data-shortcut-scope use:selectionFocus class:sidebar-hidden={!sidebar || focusMode || todoOpen || trashOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="Tend Notes" tabindex="-1">
   {#if !ready}
-    <div class="welcome"><BookOpen size={44}/><h1>TEND Notes</h1><p>Update Tend to use your new notes space.</p><p class="muted">This extension needs Tend’s Documents editing support.</p></div>
+    <div class="welcome"><BookOpen size={44}/><h1>Tend Notes</h1><p>Update Tend to use your new notes space.</p><p class="muted">This extension needs Tend’s Documents editing support.</p></div>
   {:else if loading}
     <div class="welcome" role="status"><LoaderCircle class="spin"/><p>Opening your notebooks…</p></div>
   {:else}
     <aside inert={templatesOpen || todoOpen || !!formulaSelection || dictationOpen || speechSettingsOpen || helpOpen}>
-      <div class="brand"><span class="brand-icon"><BookOpen size={20}/></span><div><strong>TEND Notes</strong><small>A little space to think.</small></div></div>
+      <div class="brand"><span class="brand-icon"><BookOpen size={20}/></span><div><strong>Tend Notes</strong><small>A little space to think.</small></div></div>
       <div class="library-picker">
         <label class="sr-only" for="notes-library">Notebook</label>
         <select id="notes-library" value={libraryId} onchange={selectLibrary} disabled={!libraries.length || opening}>{#each libraries as library}<option value={library.id}>{library.name}</option>{/each}</select>

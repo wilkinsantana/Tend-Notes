@@ -1,4 +1,4 @@
-"""Create and verify the canonical signed TEND extension release feed."""
+"""Create and verify the canonical signed Tend extension release feed."""
 from __future__ import annotations
 
 import base64

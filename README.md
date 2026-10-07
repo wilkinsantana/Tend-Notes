@@ -1,8 +1,8 @@
-# TEND Notes
+# Tend Notes
 
 Free, open source, and yours to keep. A quiet Markdown workspace inside Tend.
 
-TEND Notes gives you a quiet place to write quick thoughts, working plans, and
+Tend Notes gives you a quiet place to write quick thoughts, working plans, and
 anything worth remembering. Activate it from **Extensions → Official** in Tend,
 alongside Sites. It runs inside Tend in the browser and desktop app.
 
@@ -213,7 +213,7 @@ folder appears immediately. Choose **Back up now** or enable an hourly, daily,
 or weekly schedule. Google Drive and other providers reuse Tend's storage
 connections; credentials remain in the native host form and never reach the
 extension. Setup stays in Notes and does not enable backups automatically.
-Backups are dated ZIP snapshots under `TEND Notes backups`. The host verifies
+Backups are dated ZIP snapshots under `Tend Notes backups`. The host verifies
 saved bytes before reporting success. Earlier storage snapshots remain until you
 remove them, so a later deletion does not erase previous backups.
 

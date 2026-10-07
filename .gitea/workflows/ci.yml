@@ -1,4 +1,4 @@
-name: TEND Notes quality and publication
+name: Tend Notes quality and publication
 on:
   push:
     branches: [main, "codex/**"]

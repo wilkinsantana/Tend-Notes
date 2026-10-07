@@ -1,13 +1,14 @@
 {
   "schema": 2,
   "id": "host.tend.notes",
-  "name": "TEND Notes",
-  "version": "0.9.15",
-  "author": "TEND Notes contributors",
+  "name": "Tend Notes",
+  "version": "0.9.16",
+  "author": "Tend Notes contributors",
   "license": "MIT",
   "category": "productivity",
   "description": "A quiet space for your thoughts. Write, organize, and keep your notes in Markdown.",
   "icon": "icon.svg",
+  "glyph": "glyph.svg",
   "ui": {
     "module": "index.js",
     "mount": "shell-app",

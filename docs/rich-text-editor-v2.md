@@ -42,7 +42,7 @@ https://code.haverbeke.berlin/prosemirror/prosemirror-markdown .
 
 Use these as architectural references. The inspected Joplin root identifies
 AGPL-3.0-or-later as its default, subject to directory-specific licenses. Keep
-TEND Notes MIT: implement our own integration using appropriately licensed
+Tend Notes MIT: implement our own integration using appropriately licensed
 upstream dependencies; do not copy Joplin-specific implementation or branding.
 
 ## Recommended Notes implementation

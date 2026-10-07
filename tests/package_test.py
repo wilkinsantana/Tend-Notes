@@ -21,7 +21,7 @@ class PackageReproducibilityTests(unittest.TestCase):
                 shutil.copyfile(SCRIPT, root / 'scripts/package.py')
                 (root / 'package.json').write_text(json.dumps({'version':'1.0.0'}))
                 (root / 'extension.json').write_text(json.dumps({'version':'1.0.0','id':'test.notes'}))
-                for name in ['icon.svg','LICENSE','README.md']:
+                for name in ['icon.svg','glyph.svg','LICENSE','README.md']:
                     (root / name).write_text(name)
                 for name in order:
                     target = root / 'dist' / name

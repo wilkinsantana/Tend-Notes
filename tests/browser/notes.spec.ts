@@ -83,7 +83,7 @@ test('quick capture focuses an untitled editor from its welcome action and short
   await page.evaluate(()=>{const docs=JSON.parse(localStorage.getItem('tend-notes:demo-documents')!); docs[0].modifiedAt=0; localStorage.setItem('tend-notes:demo-documents',JSON.stringify(docs));});
   await page.reload(); await page.locator('.welcome').getByRole('button',{name:'Continue writing',exact:true}).click();
   await expect(editor).toHaveValue('A captured thought');
-  await page.getByRole('region',{name:'TEND Notes'}).focus(); await page.keyboard.press('Control+Shift+N');
+  await page.getByRole('region',{name:'Tend Notes'}).focus(); await page.keyboard.press('Control+Shift+N');
   await expect(editor).toBeFocused(); await expect(editor).toHaveValue('');
 });
 

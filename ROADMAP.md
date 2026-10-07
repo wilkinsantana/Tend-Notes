@@ -1,4 +1,4 @@
-# TEND Notes roadmap
+# Tend Notes roadmap
 
 ## 0.1 — Native Markdown notebooks
 

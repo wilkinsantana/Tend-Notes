@@ -102,7 +102,7 @@ test('template filename conflict keeps the form intact and allows a deliberate r
 
 test('template picker fits a narrow panel, traps focus, and stays opaque with transparent Notes', async ({page}) => {
   await page.setViewportSize({width:390,height:780}); await page.goto('/');
-  await page.getByRole('region', {name:'TEND Notes'}).evaluate(el => (el as HTMLElement).style.setProperty('--tend-panel-surface-alpha','0%'));
+  await page.getByRole('region', {name:'Tend Notes'}).evaluate(el => (el as HTMLElement).style.setProperty('--tend-panel-surface-alpha','0%'));
   const trigger = page.getByRole('button', {name:'Templates', exact:true});
   await trigger.click();
   const modal = picker(page);

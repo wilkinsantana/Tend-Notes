@@ -178,7 +178,7 @@ def main():
         subprocess.run(['git','push','https://github.com/'+REPO+'.git','HEAD:refs/heads/main'],env=env,check=True)
     assert api('/git/ref/heads/main')['object']['sha'] == sha
     if release is None:
-        release=api('/releases','POST',{'tag_name':tag,'target_commitish':sha,'name':'TEND Notes '+version,
+        release=api('/releases','POST',{'tag_name':tag,'target_commitish':sha,'name':'Tend Notes '+version,
           'body':'Native Markdown notes for Tend. Requires host document capability v1. Activate and update manually from Extensions.\n\nVerified source: `'+sha+'`\nPackage SHA-256: `'+digest+'`','draft':False,'prerelease':False})
     assert tag_target(tag) == sha, 'Release tag changed; refusing to upload assets'
     assets={asset['name']:asset for asset in release.get('assets',[])}

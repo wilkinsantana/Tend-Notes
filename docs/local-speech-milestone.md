@@ -1,4 +1,4 @@
-# Optional local speech for TEND Notes
+# Optional local speech for Tend Notes
 
 Status: version 0.9.0 implementation under release validation. Publication and
 physical phone acceptance are separate gates.

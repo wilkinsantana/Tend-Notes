@@ -74,7 +74,7 @@ test('unsaved failed editor blocks ToDo and keeps its recovery copy',async({page
 
 test('narrow ToDo supports keyboard, search, read-only tasks, transparency and returning focus',async({page})=>{
   await page.setViewportSize({width:390,height:780});await seed(page);await page.goto('/?unconnected');
-  await page.getByRole('region',{name:'TEND Notes'}).evaluate(el=>(el as HTMLElement).style.setProperty('--tend-panel-surface-alpha','0%'));
+  await page.getByRole('region',{name:'Tend Notes'}).evaluate(el=>(el as HTMLElement).style.setProperty('--tend-panel-surface-alpha','0%'));
   await enter(page);await expect(page.getByRole('button',{name:'Back to Notes'})).toBeInViewport();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expect(page.getByRole('checkbox').first()).toBeDisabled();
