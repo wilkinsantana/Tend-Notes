@@ -20,7 +20,7 @@
     "@codemirror/state": "6.7.4",
     "@codemirror/view": "6.43.11",
     "@lezer/highlight": "1.2.3",
-    "dompurify": "3.4.14",
+    "dompurify": "3.4.16",
     "katex": "0.18.7",
     "lucide-svelte": "0.454.0",
     "markdown-it": "14.3.1",
@@ -43,5 +43,8 @@
     "svelte-check": "4.7.3",
     "@playwright/test": "1.58.2",
     "@types/bun": "1.3.10"
+  },
+  "overrides": {
+    "devalue": "5.9.4"
   }
 }
