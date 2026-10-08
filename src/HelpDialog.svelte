@@ -30,8 +30,8 @@
       <h3>Notes and tasks together</h3><p>Use a checklist inside a note, then open ToDo to see tasks across notebooks. Daily notes and templates give recurring ideas, plans and shopping lists a starting point.</p>
     {:else if topic === 'Writing & tables'}
       <h3>Write comfortably</h3><p>The toolbar groups text formatting, lists, inserts and structured content. Add links, images, attachments, code, quotations, tables or formulas without memorizing every Markdown shortcut. Use Undo and Redo to revisit edits.</p>
-      <p>Press Enter on a list item to continue the list. Press Enter on an empty item to leave it. A wide table scrolls sideways inside the note so the rest of your text stays readable.</p>
-      <h3>What travels with Markdown?</h3><p>Headings, emphasis, lists, links and code are portable. Many Markdown readers also support tables and checklists. Formula rendering and embedded media depend on the destination app.</p>
+      <p>Press Enter on a list item to continue the list. Press Enter on an empty item to leave it. A wide table scrolls sideways inside the note so the rest of your text stays readable. Choose Insert diagram to add a flowchart written as text; Preview draws it.</p>
+      <h3>What travels with Markdown?</h3><p>Headings, emphasis, lists, links and code are portable. Many Markdown readers also support tables and checklists. Formula rendering, diagrams and embedded media depend on the destination app.</p>
       <p>Markdown tables store their text and alignment. They have no standard syntax for column widths, row heights, text colors or cell backgrounds. HTML styling is interpreted differently by different readers.</p>
       <p class="tip">Note colors in the list organize your notes; they do not change text color. Draggable table sizing and text/cell colors are planned additions and are not enabled in this version. Their export behavior will be explained here when available.</p>
     {:else if topic === 'Keyboard shortcuts'}

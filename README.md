@@ -86,10 +86,47 @@ Shift+Enter moves back. Match case is optional. Escape returns to the editor.
 Search is literal, works in Edit and Split, and does not alter writing or Undo
 history. Up to 10,000 matches are shown; narrow the search if the count ends in +.
 
-Preview supports common Markdown, lists, code, tables, and LaTeX math. Use the
+Preview supports common Markdown, lists, code, tables, LaTeX math, and Mermaid diagrams. Use the
 Sigma toolbar icon to insert a formula with a live preview. Embedded HTML is
 displayed safely; external images load only after a click. Links open only after you
 click them. No external writing service, tracking, or AI account is required.
+
+## Diagrams (Mermaid)
+
+Draw flowcharts, sequences and more from plain text. In Edit Markdown, choose
+the **Diagram** toolbar button to insert a starter, or write a fenced block
+tagged `mermaid`:
+
+````markdown
+```mermaid
+graph TD
+  A[Start] --> B{Choice}
+  B -->|Yes| C[Do it]
+  B -->|No| D[Skip]
+```
+````
+
+Preview, Split view and shared read-only notes show the drawing; the editor and
+the saved file keep the text, so any Mermaid-aware reader shows the same
+diagram. An untagged fence whose first line is a Mermaid keyword (`graph TD`,
+`flowchart LR`, `sequenceDiagram`, ...) is drawn too; a fence tagged with another
+language never is. Supported types are flowcharts (`graph`, `flowchart`),
+sequence, class, state, entity-relationship, Gantt, pie, mindmap, timeline,
+user journey, git graph, quadrant, requirement, Sankey, XY, block, packet,
+kanban, architecture and radar diagrams.
+
+Diagrams use the current Tend theme, including light and dark, and redraw when it
+changes. A mistake never hides your note: the source stays visible with a short
+sentence such as "This diagram has a mistake on line 3", and the rest of the note
+renders normally. A note draws at most 12 diagrams of up to 20,000 characters
+each; larger blocks remain code.
+
+Mermaid loads only when a note contains a diagram, from a separate file inside
+the extension, so notes without diagrams are not slower. Drawing runs locally in
+strict mode: no click handlers, scripts, HTML labels, remote fonts or network
+requests, and it needs no change to the host's security policy. Notes has no
+HTML or PDF export of a single note (export is Markdown source), so there is no
+exported diagram image; the Mermaid text travels with the note.
 
 ## A compact writing sidebar
 

@@ -8,6 +8,15 @@ export default defineConfig({
   // initial optimizer graph; late discovery otherwise reloads active test pages.
   optimizeDeps: { include: [...Object.keys(runtime).filter(name => !['svelte', 'lucide-svelte'].includes(name)), 'markdown-it/lib/token.mjs'] },
   plugins: [svelte({ compilerOptions: { css: 'injected' } }), {
+    // Mermaid's lodash and cytoscape dependencies find the global object with Function('return this')(). The host's
+    // install scan rightly refuses any Function constructor, so ship the equivalent globalThis instead.
+    name: 'no-function-constructor',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!id.includes('/node_modules/') || !/Function\(\s*(['"])return this\1\s*\)\s*\(\)/.test(code)) return null;
+      return { code: code.replace(/Function\(\s*(['"])return this\1\s*\)\s*\(\)/g, 'globalThis'), map: null };
+    },
+  }, {
     name: 'bundled-license-inventory',
     generateBundle(_, bundle) {
       const names = new Set<string>();
