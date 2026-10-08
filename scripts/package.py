@@ -14,11 +14,36 @@ files = {name: (root / name).read_bytes() for name in ['icon.svg', 'glyph.svg', 
 javascript = {path.relative_to(root / 'dist').as_posix(): path.read_bytes() for path in sorted((root / 'dist').rglob('*.js'))}
 assert 'index.js' in javascript, 'Missing extension entry: index.js'
 assert 'task-worker.js' in javascript, 'Missing task worker entry: task-worker.js'
-# The host's install scan refuses runtime string evaluation anywhere in the package, bundled dependencies included.
-forbidden = re.compile(r'\beval\s*\(|\bnew\s+Function\s*\(|(?:^|[^\w$])Function\s*\(\s*[\'"`]', re.M)
+# The host's install scan refuses these constructs anywhere in the package, bundled dependencies included. The patterns
+# mirror the host's block rules (no-eval, no-function-ctor, no-dynamic-import-expr, no-script-injection, no-document-write,
+# no-cookie-write); a package that would fail the install scan must fail here, before it is signed or published.
+evaluation = re.compile(
+    r'\beval\s*\('
+    r'|\bnew\s+Function\s*\('
+    r'|(?:^|[^\w$])Function\s*\(\s*[\'"`]'
+    r'|(?<![\w$])Function\s*\.\s*(?:call|apply|bind)\s*\('
+    r'|\(\s*0\s*,\s*Function\s*\)\s*\('
+    r'|Reflect\s*\.\s*construct\s*\(\s*Function\b', re.M)
+# A dynamic import must take a bare string literal; the literal may not name a remote address.
+dynamic_import = re.compile(r'\bimport\s*\(\s*(?![\'"][^\'"`]*[\'"]\s*\))')
+remote_import = re.compile(r'\bimport\s*\(\s*[\'"`]\s*(?:https?:)?//', re.I)
+others = [
+    (re.compile(r'createElement\s*\(\s*[\'"]script[\'"]'), 'script-element injection'),
+    (re.compile(r'document\.write(?:ln)?\s*\('), 'document.write'),
+    (re.compile(r'document\.cookie\s*='), 'writing document.cookie'),
+    (remote_import, 'dynamic import of a remote address'),
+    (dynamic_import, 'dynamic import that is not a string literal'),
+]
+def refusals(text):
+    """Every reason the host's install scan would refuse this JavaScript, as (label, matched text)."""
+    found = evaluation.search(text)
+    if found: yield 'runtime string evaluation', found.group(0).strip()
+    for pattern, label in others:
+        found = pattern.search(text)
+        if found: yield label, found.group(0).strip()
 for name, data in javascript.items():
-    found = forbidden.search(data.decode('utf-8', 'replace'))
-    assert not found, f'{name}: runtime string evaluation is not allowed ({found.group(0).strip()})'
+    for label, matched in refusals(data.decode('utf-8', 'replace')):
+        raise AssertionError(f'{name}: {label} is not allowed ({matched})')
 files.update(javascript)
 notices = []
 visited = set()

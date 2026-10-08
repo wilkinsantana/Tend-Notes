@@ -2,7 +2,8 @@
   import { renderDocument } from './markdown';
   import { clearSpeechParagraph, showSpeechParagraph } from './speechFollow';
   import type { Documents } from './host';
-  import { cachedDiagram, readDiagramTheme, renderDiagram, type DiagramResult, type DiagramTheme } from './diagram';
+  import { cachedDiagram, placeDiagram, readDiagramTheme, renderDiagram, type DiagramResult, type DiagramTheme } from './diagram';
+  import { DIAGRAM_BUDGET_MESSAGE, withinDiagramBudget } from './diagramSafety';
   let {content, documents, noteId, onnotelink, speechParagraphs = [], activeSpeechParagraph = null, followSpeech = true}: {content: string; documents: Documents; noteId: string; onnotelink?: (id:string)=>void; speechParagraphs?: string[]; activeSpeechParagraph?: number|null; followSpeech?: boolean} = $props();
   let element: HTMLDivElement;
   const rendered = $derived(renderDocument(content));
@@ -66,27 +67,40 @@
     let active = true, timer = 0, frame = 0, drawn = '';
     const show = (block: HTMLElement, result: DiagramResult) => {
       let figure = block.nextElementSibling as HTMLElement | null;
-      if (!figure?.classList.contains('notes-diagram')) { figure = document.createElement('div'); figure.className = 'notes-diagram'; block.after(figure); }
+      if (!figure?.classList.contains('notes-diagram') && !figure?.classList.contains('notes-diagram-error')) { figure = document.createElement('div'); figure.className = 'notes-diagram'; block.after(figure); }
       if (result.ok) {
-        figure.className = 'notes-diagram'; figure.innerHTML = result.svg; block.hidden = true;
+        figure.className = 'notes-diagram'; figure.innerHTML = placeDiagram(result); block.hidden = true;
       } else {
         figure.className = 'notes-diagram-error'; figure.setAttribute('role', 'note'); figure.textContent = result.message; block.hidden = false;
       }
     };
+    // A note may hold many large diagrams; past a shared budget the rest stay as code with a plain explanation.
+    const fits = withinDiagramBudget(blocks.map(block => block.textContent ?? ''));
+    const tooMany: DiagramResult = { ok: false, message: DIAGRAM_BUDGET_MESSAGE };
+    let drawing = false, again = false;
     async function draw(theme: DiagramTheme) {
       drawn = theme.signature;
-      for (const block of blocks) {
+      for (const [index, block] of blocks.entries()) {
+        if (!fits[index]) { show(block, tooMany); continue; }
         const source = block.textContent ?? '';
         const hit = cachedDiagram(source, theme);
         if (hit) { show(block, hit); continue; }
         const result = await renderDiagram(source, theme);
-        if (!active || drawn !== theme.signature) return;
+        if (!active) return;
         show(block, result);
       }
     }
+    const missing = () => blocks.some(block => !block.nextElementSibling?.classList.contains('notes-diagram') && !block.nextElementSibling?.classList.contains('notes-diagram-error'));
     // Typing in split view re-renders the note on every key; wait for a pause before asking Mermaid.
-    const start = () => { const theme = readDiagramTheme(element); if (theme.signature !== drawn || blocks.some(block => !block.nextElementSibling?.classList.contains('notes-diagram') && !block.nextElementSibling?.classList.contains('notes-diagram-error'))) void draw(theme); };
-    const sync = () => { const theme = readDiagramTheme(element); for (const block of blocks) { const hit = cachedDiagram(block.textContent ?? '', theme); if (hit) show(block, hit); } };
+    // Only one pass runs at a time: changes that arrive while it draws are folded into one follow-up pass.
+    const start = () => {
+      if (drawing) { again = true; return; }
+      const theme = readDiagramTheme(element);
+      if (theme.signature === drawn && !missing()) return;
+      drawing = true;
+      void draw(theme).finally(() => { drawing = false; if (again && active) { again = false; start(); } });
+    };
+    const sync = () => { const theme = readDiagramTheme(element); for (const [index, block] of blocks.entries()) { if (!fits[index]) { show(block, tooMany); continue; } const hit = cachedDiagram(block.textContent ?? '', theme); if (hit) show(block, hit); } };
     sync();
     timer = window.setTimeout(start, 250);
     // Follow the Tend theme: re-render whenever the host changes tokens on any ancestor.

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chooseNotebook, emptyListMessage, notebookStorageKey, rememberNotebook, savedNotebook, NOTEBOOK_PROBE_LIMIT } from '../src/notebookChoice';
+import { chooseNotebook, emptyListMessage, nextReconnectDelay, notebookStorageKey, rememberNotebook, savedNotebook, NOTEBOOK_PROBE_LIMIT } from '../src/notebookChoice';
 
 const lib = (id: string, name = id) => ({ id, name, canCreate: true });
 // Mirrors production on 2026-10-08: the newest notebook is empty, the notes live in older ones.
@@ -48,8 +48,21 @@ describe('chooseNotebook', () => {
     expect(probes).toBe(NOTEBOOK_PROBE_LIMIT);
   });
 
-  test('a failed probe is reported, never treated as an empty notebook', async () => {
-    await expect(chooseNotebook(libraries, '', async () => { throw new Error('Bad Gateway'); })).rejects.toThrow('Bad Gateway');
+  test('a notebook whose count fails is skipped, never fatal', async () => {
+    const failing = new Set(['church', 'learning-go']);
+    expect(await chooseNotebook(libraries, '', async id => { if (failing.has(id)) throw new Error('Bad Gateway'); return counts[id]; })).toBe('my-notes');
+  });
+
+  test('when every count fails, the first notebook opens and its own list reports the problem', async () => {
+    expect(await chooseNotebook(libraries, '', async () => { throw new Error('Bad Gateway'); })).toBe('church');
+  });
+});
+
+describe('nextReconnectDelay', () => {
+  test('backs off 3 s, 6 s, 12 s, then holds at 30 s', () => {
+    const delays: number[] = [];
+    for (let delay = 0, i = 0; i < 6; i++) delays.push(delay = nextReconnectDelay(delay));
+    expect(delays).toEqual([3000, 6000, 12000, 30000, 30000, 30000]);
   });
 });
 

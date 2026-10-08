@@ -40,7 +40,7 @@
   import { markdownToSpeech } from './speechText';
   import { createSpeechPlayback } from './speechPlayback';
   import { SpeechReplay, speechReplayParagraphs } from './speechReplay';
-  import { chooseNotebook, emptyListMessage, rememberNotebook, savedNotebook } from './notebookChoice';
+  import { chooseNotebook, emptyListMessage, nextReconnectDelay, rememberNotebook, savedNotebook } from './notebookChoice';
   const speechReplay = new SpeechReplay();
   let replayNoteId: string | null = null;
   let previewContainer = $state<HTMLDivElement>();
@@ -243,7 +243,12 @@
   let starting = false;
   let preferenceStorage: Storage | undefined;
   const notesUnreachable = $derived(!listLoaded && (startFailed || listFailed));
-  $effect(() => { if (librariesLoaded && libraryId) rememberNotebook(preferenceStorage, host.user?.id, libraryId); });
+  // Only the person's own choice is remembered (the notebook menu, or a notebook they set up). A fallback opened because
+  // the saved notebook was missing from one response must never overwrite the real choice.
+  const choose = (id: string) => rememberNotebook(preferenceStorage, host.user?.id, id);
+  // Reconnect backoff: 3 s, 6, 12, then 30 s between attempts while Tend is unreachable; a success resets it.
+  let retryDelay = 0, retryAt = 0;
+  const settle = (ok: boolean) => { retryDelay = ok ? 0 : nextReconnectDelay(retryDelay); retryAt = ok ? 0 : Date.now() + retryDelay; };
   let opening = $state(false);
   let error = $state('');
   let view = $state<View | null>(null);
@@ -734,17 +739,19 @@
       libraries = found; libraryId = chosen; librariesLoaded = true;
       if (startFailed) { startFailed = false; error = ''; }
       if (chosen) await loadList(); else listLoaded = true;
+      settle(!listFailed);
       void buildSearch(libraryId);
-    } catch (e) { if (alive) { startFailed = true; error = message(e); } }
+    } catch (e) { if (alive) { startFailed = true; error = message(e); settle(false); } }
     finally { starting = false; loading = false; }
   }
-  function retryNotes() { error = ''; if (!librariesLoaded) void start(); else void loadList(); }
+  function retryNotes() { error = ''; retryAt = 0; if (!librariesLoaded) void start(); else void loadList(); }
   async function refresh() {
+    if (Date.now() < retryAt) return;
     if (trashOpen || todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind || formulaSelection || linkDialog || dictationOpen || speechSettingsOpen) return;
     syncing = true;
     try {
       if (!librariesLoaded) { await start(); return; }
-      if (notes.length <= 100) await loadList();
+      if (notes.length <= 100) { await loadList(); settle(!listFailed); }
       const current = session;
       const revision = current?.view.document.revision;
       if (current && !current.view.dirty && !current.view.saving) {
@@ -766,7 +773,7 @@
       if (!(await ensureSaved())) return;
       libraries = await host.documents.libraries(); librariesLoaded = true; startFailed = false;
       session?.abandon(); session = null; view = null;
-      libraryId = selected.id; query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false;
+      libraryId = selected.id; choose(selected.id); query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false;
       await loadList(); void buildSearch(libraryId);
     } catch(e) { if(alive) error = message(e); }
     finally { opening = false; }
@@ -923,7 +930,7 @@
     try {
       if (!(await ensureSaved())) return;
       session?.abandon(); session = null; view = null; mobileEditor = false;
-      libraryId = id; query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; notes = []; listLoaded = false; listFailed = false; await loadList(); void buildSearch(id);
+      libraryId = id; choose(id); query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; notes = []; listLoaded = false; listFailed = false; await loadList(); void buildSearch(id);
     } finally { opening = false; }
   }
   function selectLibrary(event: Event) {

@@ -1,9 +1,10 @@
 import DOMPurify from 'dompurify';
 import { explainDiagramError } from './diagramSource';
+import { isFragmentReference, safeDiagramSource, scrubCss } from './diagramSafety';
 
 type Mermaid = typeof import('mermaid').default;
 export interface DiagramTheme { signature: string; dark: boolean; font: string; variables: Record<string, string> }
-export type DiagramResult = { ok: true; svg: string } | { ok: false; message: string };
+export type DiagramResult = { ok: true; svg: string; id: string } | { ok: false; message: string };
 
 // Mermaid is a separate chunk: it loads only when a note actually contains a diagram.
 let engine: Promise<Mermaid> | null = null;
@@ -82,13 +83,51 @@ const cacheKey = (source: string, theme: DiagramTheme) => `${theme.signature}\n$
 /** Synchronous hit so unchanged diagrams do not flicker while the rest of a note is edited. */
 export const cachedDiagram = (source: string, theme: DiagramTheme) => cache.get(cacheKey(source, theme));
 let counter = 0;
-const cleanSvg = (svg: string) => DOMPurify.sanitize(svg, {
-  USE_PROFILES: { svg: true, svgFilters: true }, ADD_TAGS: ['style'], FORBID_TAGS: ['script', 'foreignObject', 'a', 'image'], ALLOW_DATA_ATTR: false,
+let purifier: ReturnType<typeof DOMPurify> | undefined;
+/** A private DOMPurify so these hooks never touch the sanitiser that note Markdown uses. */
+function diagramPurifier() {
+  if (purifier) return purifier;
+  const instance = DOMPurify(window);
+  // Style text can fetch through url(), @import or image-set(); only same-document fragments may remain.
+  instance.addHook('uponSanitizeElement', node => {
+    if (node.nodeName.toLowerCase() === 'style' && node.textContent) node.textContent = scrubCss(node.textContent);
+  });
+  instance.addHook('uponSanitizeAttribute', (_node, data) => {
+    const name = data.attrName.toLowerCase();
+    if (name === 'href' || name === 'xlink:href' || name.endsWith(':href')) { if (!isFragmentReference(data.attrValue)) data.keepAttr = false; return; }
+    data.attrValue = scrubCss(data.attrValue);
+  });
+  return purifier = instance;
+}
+export const cleanSvg = (svg: string) => diagramPurifier().sanitize(svg, {
+  USE_PROFILES: { svg: true, svgFilters: true }, ADD_TAGS: ['style'], FORBID_TAGS: ['script', 'foreignobject', 'foreignObject', 'a', 'image', 'feimage', 'feImage'], ALLOW_DATA_ATTR: false,
 });
 
+let instances = 0;
+/** One cached drawing can appear twice in a note; give each placed copy its own element ids so markers and styles never collide. */
+export function placeDiagram(result: Extract<DiagramResult, { ok: true }>): string {
+  return result.svg.split(result.id).join(`${result.id}-${++instances}`);
+}
+
+// Mermaid keeps global state, so draw one diagram at a time and share work between callers asking for the same one.
+const inflight = new Map<string, Promise<DiagramResult>>();
+let queue: Promise<unknown> = Promise.resolve();
 /** Render one Mermaid source to inline SVG. Resolves with a plain-language failure rather than rejecting on bad diagrams. */
-export async function renderDiagram(source: string, theme: DiagramTheme): Promise<DiagramResult> {
+export function renderDiagram(source: string, theme: DiagramTheme): Promise<DiagramResult> {
   const key = cacheKey(source, theme), hit = cache.get(key);
+  if (hit) return Promise.resolve(hit);
+  let pending = inflight.get(key);
+  if (!pending) {
+    pending = queue.then(() => drawDiagram(source, theme, key));
+    queue = pending.catch(() => undefined);
+    inflight.set(key, pending);
+    void pending.finally(() => inflight.delete(key));
+  }
+  return pending;
+}
+
+async function drawDiagram(source: string, theme: DiagramTheme, key: string): Promise<DiagramResult> {
+  const hit = cache.get(key);
   if (hit) return hit;
   let result: DiagramResult, transient = false;
   const id = `notes-diagram-${++counter}`;
@@ -99,10 +138,11 @@ export async function renderDiagram(source: string, theme: DiagramTheme): Promis
       themeVariables: { ...theme.variables, darkMode: theme.dark, fontFamily: theme.font }, htmlLabels: false,
       flowchart: { htmlLabels: false, useMaxWidth: true }, sequence: { useMaxWidth: true }, maxTextSize: 20000, maxEdges: 300, logLevel: 'fatal',
     });
-    await mermaid.parse(source);
-    const { svg } = await mermaid.render(id, source);
+    const safe = safeDiagramSource(source);
+    await mermaid.parse(safe);
+    const { svg } = await mermaid.render(id, safe);
     const clean = cleanSvg(svg);
-    result = clean.includes('<svg') ? { ok: true, svg: clean } : { ok: false, message: 'This diagram could not be drawn.' };
+    result = clean.includes('<svg') ? { ok: true, svg: clean, id } : { ok: false, message: 'This diagram could not be drawn.' };
   } catch (error) {
     transient = error instanceof Error && /dynamically imported|Importing a module script failed|error loading dynamically/i.test(error.message);
     result = { ok: false, message: transient ? 'This diagram could not be loaded. Check your connection and reopen the note.' : explainDiagramError(error) };

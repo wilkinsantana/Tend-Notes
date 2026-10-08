@@ -129,3 +129,164 @@ activate({id:'host.tend.notes',user:{id:'fixture',name:'Writer',role:'user'},onU
   await expect(page.locator('.rendered-markdown .notes-diagram-error')).toHaveText(/This diagram has a mistake on line \d+: /);
   expect(violations).toEqual([]); expect(failures).toEqual([]);
 });
+
+// ---- Privacy: a diagram must never make the reader's browser fetch an address the note author chose. ----
+const EVIL = /evil\.example/;
+async function watchEvil(page:Page){
+  const hits:string[]=[];
+  await page.route(EVIL,route=>{hits.push(route.request().url());void route.fulfill({status:200,contentType:'image/png',body:''});});
+  return hits;
+}
+/** Everything in the drawn SVG that could fetch: remote url(), @import, image-set, or a link that is not a fragment. */
+const audit=(page:Page)=>page.locator('.rendered-markdown .notes-diagram').evaluateAll(figures=>{
+  const found:string[]=[];
+  const risky=/url\(\s*["']?(?!#)|@import|image-set|evil\.example/i;
+  for(const figure of figures) for(const node of figure.querySelectorAll('*')){
+    for(const attr of node.attributes){
+      if(/^href$|:href$/i.test(attr.name)){ if(!attr.value.trim().startsWith('#')) found.push(`${node.localName}@${attr.name}=${attr.value}`); }
+      else if(risky.test(attr.value)) found.push(`${node.localName}@${attr.name}=${attr.value}`);
+      if(/^on/i.test(attr.name)) found.push(`${node.localName}@${attr.name}`);
+    }
+    if(node.localName==='style'&&risky.test(node.textContent??'')) found.push(`style=${node.textContent}`);
+  }
+  return found;
+});
+const styleText=(page:Page)=>page.locator('.rendered-markdown .notes-diagram svg style').evaluateAll(nodes=>nodes.map(node=>node.textContent).join('\n'));
+async function preview(page:Page,body:string,count=1){
+  await open(page,body);
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await expect(page.locator('.rendered-markdown .notes-diagram svg')).toHaveCount(count,{timeout:20000});
+}
+
+test('themeCSS cannot make the browser fetch a remote url from the diagram style',async({page})=>{
+  const hits=await watchEvil(page);
+  await preview(page,'```mermaid\n%%{init: {"themeCSS": "text{mask-image:url(https://evil.example/b)}"}}%%\ngraph TD\n  A --> B\n```');
+  // Mermaid draws into the live page, so the directive is reduced before Mermaid reads it: nothing is fetched while drawing.
+  expect(await styleText(page)).not.toContain('mask-image');
+  expect(await audit(page)).toEqual([]);
+  await page.waitForTimeout(500);
+  expect(hits).toEqual([]);
+});
+
+test('quoted, @import, escaped, image-set and attribute-carried references are neutralised too',async({page})=>{
+  const hits=await watchEvil(page);
+  const directive=(init:object)=>`\`\`\`mermaid\n%%{init: ${JSON.stringify(init)}}%%\ngraph TD\n  A --> B\n\`\`\``;
+  const css=[
+    ".node rect{background-image:url('https://evil.example/c')}",
+    '.node rect{background-image:url("https://evil.example/c2")}',
+    '@import url(https://evil.example/d.css); text{fill:red}',
+    'text{mask-image:\\75\\72\\6c(https://evil.example/e)}',
+    'text{mask-image:u\\72l("\\68ttps://evil.example/e2")}',
+    '.node rect{background:image-set("https://evil.example/g" 1x)}',
+    '.node rect{background:-webkit-image-set(url(https://evil.example/g2) 1x)}',
+  ];
+  const frontMatter='```mermaid\n---\ntitle: Plan\nconfig:\n  themeCSS: "text{mask-image:url(https://evil.example/fm)}"\n---\ngraph TD\n  A --> B\n```';
+  const nodeImage='```mermaid\ngraph TD\n  A@{ img: "https://evil.example/n.png", label: "x", w: 60, h: 60 }\n  A --> B\n```';
+  const bodies=[...css.map(themeCSS=>directive({themeCSS})),frontMatter,
+    "```mermaid\n%%{init: {'themeCSS': 'text{mask-image:url(https://evil.example/q)}'}}%%\ngraph TD\n  A --> B\n```",
+    nodeImage,directive({fontFamily:'x;background:url(https://evil.example/f)'}),
+    directive({themeVariables:{lineColor:'red;background:url(https://evil.example/h)'}})];
+  await open(page,bodies.join('\n\n'));
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await expect(page.locator('.rendered-markdown .notes-diagram svg')).toHaveCount(bodies.length,{timeout:30000});
+  expect(await audit(page)).toEqual([]);
+  await page.waitForTimeout(500);
+  expect(hits).toEqual([]);
+});
+
+test('the sanitiser scrubs style and presentation attributes and non-fragment links',async({page})=>{
+  await page.goto('/');
+  const result=await page.evaluate(async()=>{
+    // Mermaid's own parser refuses most of these, so feed the sanitiser directly.
+    const path='/src/diagram.ts';
+    const {cleanSvg}=await import(path);
+    return cleanSvg('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="m"><path d="M0 0"/></marker></defs><rect style="mask-image:url(https://evil.example/1);fill:url(#g)" fill="url(https://evil.example/2)" marker-end="url(#m)"/><rect style="mask-image:\\75rl(&quot;https://evil.example/4&quot;)"/><linearGradient id="g1" href="https://evil.example/3"/><pattern id="p1" xlink:href="//evil.example/5"/><linearGradient id="g2" href="#ok"/><style>@import url(https://evil.example/6); a{fill:url(https://evil.example/7)} b{fill:url(#g)}</style></svg>') as string;
+  });
+  expect(result).not.toMatch(EVIL);
+  expect(result).toContain('fill:url(#g)');
+  expect(result).toContain('marker-end="url(#m)"');
+  expect(result).toContain('href="#ok"');
+  expect(result).toContain('b{fill:url(#g)}');
+});
+
+test('a legitimate url(#marker) arrowhead still renders and resolves inside the document',async({page})=>{
+  await preview(page,flow);
+  const markers=await page.locator('.rendered-markdown .notes-diagram svg [marker-end], .rendered-markdown .notes-diagram svg [style*="marker-end"]').evaluateAll(nodes=>nodes.map(node=>{
+    const value=node.getAttribute('marker-end')??node.getAttribute('style')??'';
+    const id=/url\(\s*["']?#([^"')\s]+)/.exec(value)?.[1]??'';
+    return {id,found:!!id&&!!document.getElementById(id)};
+  }));
+  expect(markers.length).toBeGreaterThan(0);
+  expect(markers.every(marker=>marker.found)).toBe(true);
+  expect(await audit(page)).toEqual([]);
+});
+
+test('the same diagram twice gets distinct element ids and both arrowheads resolve',async({page})=>{
+  const twice='```mermaid\ngraph TD\n  A --> B\n```\n\nBetween\n\n```mermaid\ngraph TD\n  A --> B\n```';
+  await preview(page,twice,2);
+  const ids=await page.locator('.rendered-markdown [id]').evaluateAll(nodes=>nodes.map(node=>node.id));
+  expect(new Set(ids).size).toBe(ids.length);
+  const unresolved=await page.locator('.rendered-markdown .notes-diagram svg [marker-end]').evaluateAll(nodes=>nodes.filter(node=>{
+    const id=/url\(\s*["']?#([^"')\s]+)/.exec(node.getAttribute('marker-end')??'')?.[1]??'';
+    return !(node as SVGElement).ownerSVGElement?.querySelector(`[id="${id}"]`);
+  }).length);
+  expect(unresolved).toBe(0);
+});
+
+test('an init directive cannot loosen the security level or switch on HTML labels',async({page})=>{
+  const dialogs:string[]=[]; page.on('dialog',d=>{dialogs.push(d.message());void d.dismiss();});
+  await preview(page,'```mermaid\n%%{init: {"securityLevel":"loose","flowchart":{"htmlLabels":true},"htmlLabels":true}}%%\ngraph TD\n  A["<img src=x onerror=alert(1)>hi"] --> B["<b onclick=alert(2)>bold</b>"]\n  click A call alert(3)\n```');
+  expect(await page.locator('.rendered-markdown .notes-diagram foreignObject').count()).toBe(0);
+  expect(await page.locator('.rendered-markdown .notes-diagram img, .rendered-markdown .notes-diagram a, .rendered-markdown .notes-diagram script').count()).toBe(0);
+  expect(await audit(page)).toEqual([]);
+  expect(dialogs).toEqual([]);
+});
+
+test('past a shared size budget the remaining diagrams stay as code with a plain note',async({page})=>{
+  const filler=`%% ${'x'.repeat(14990)}`;
+  const block=(name:string)=>`\`\`\`mermaid\n${filler}\ngraph TD\n  ${name} --> Z\n\`\`\``;
+  await open(page,['A','B','C','D','E'].map(block).join('\n\n'));
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await expect(page.locator('.rendered-markdown .notes-diagram svg')).toHaveCount(3,{timeout:30000});
+  const notes=page.locator('.rendered-markdown .notes-diagram-error');
+  await expect(notes).toHaveCount(2);
+  await expect(notes.first()).toHaveText('This note has too many diagrams to draw at once.');
+  await expect(page.locator('.rendered-markdown pre[data-notes-diagram]:visible')).toHaveCount(2);
+});
+
+test('a shared guest note draws diagrams through the same sanitiser',async({page})=>{
+  const hits=await watchEvil(page);
+  await page.goto('/');
+  const body='```mermaid\n%%{init: {"themeCSS": "text{mask-image:url(https://evil.example/b)}"}}%%\ngraph TD\n  A[Start] --> B[Done]\n```';
+  await page.evaluate(async content=>{
+    const modulePath='/src/index.ts';
+    const {mountShared}=await import(modulePath);
+    const state={name:'Shared plan.md',content,documentId:'shared-1',permission:'view',allowAttachments:false,status:'saved',error:null,canUndo:false,canRedo:false,participants:[]};
+    const host={version:1 as const,subscribe(listener:(s:typeof state)=>void){listener({...state});return ()=>{};},edit(){},undo(){},redo(){},beginComposition(){},endComposition(){},presence(){},async upload(){throw Error('no');},async readAttachment(){return new Blob([]);}};
+    const root=document.createElement('div'); root.style.height='720px'; document.body.replaceChildren(root);
+    await mountShared(host,root);
+  },body);
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await expect(page.locator('.rendered-markdown .notes-diagram svg')).toHaveCount(1,{timeout:20000});
+  await expect(page.locator('.rendered-markdown .notes-diagram svg')).toContainText('Start');
+  expect(await styleText(page)).not.toContain('mask-image');
+  expect(await audit(page)).toEqual([]);
+  await page.waitForTimeout(500);
+  expect(hits).toEqual([]);
+});
+
+test('theme changes during a render fold into follow-up passes instead of starting duplicate draws',async({page})=>{
+  const chain='```mermaid\ngraph LR\n'+Array.from({length:120},(_,i)=>`  N${i}[Step ${i}] --> N${i+1}[Step ${i+1}]`).join('\n')+'\n```'; // slow enough that changes land mid-render
+  await preview(page,chain);
+  await page.evaluate(()=>{
+    (window as any).renders=0;
+    // Mermaid measures inside a temporary container named d<id>; one container is one render.
+    new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)if((node as Element).id?.startsWith('dnotes-diagram'))(window as any).renders++;}).observe(document.body,{childList:true});
+  });
+  const shades=['#ffffff','#f4f4f4','#eaeaea','#e0e0e0','#d6d6d6','#cccccc'];
+  for(const shade of shades){await theme(page,shade,'#1b2420');await page.waitForTimeout(20);}
+  await expect.poll(()=>page.evaluate(()=>(window as any).renders),{timeout:10000}).toBeGreaterThan(0);
+  await page.waitForTimeout(1500);
+  expect(await page.evaluate(()=>(window as any).renders)).toBeLessThan(shades.length); // without the guard every change starts its own draw
+  await expect(page.locator('.rendered-markdown .notes-diagram svg')).toHaveCount(1);
+});

@@ -26,15 +26,18 @@ export function rememberNotebook(storage: KeyValue | undefined, userId: string |
 }
 
 /**
- * Picks the notebook to open. `countNotes` errors propagate: if the panel is
- * unreachable the caller must show "reconnecting", never an empty notebook.
+ * Picks the notebook to open. A notebook whose note count cannot be read is
+ * skipped: one broken notebook must not hide the others. If the panel itself
+ * is unreachable the caller's `libraries()` call fails first and Notes shows
+ * "reconnecting"; when every probe fails the first notebook opens and its own
+ * list load reports the failure. Nothing here is saved as the person's choice.
  */
 export async function chooseNotebook(libraries: Library[], saved: string, countNotes: (libraryId: string) => Promise<number>): Promise<string> {
   if (!libraries.length) return '';
   if (saved && libraries.some(library => library.id === saved)) return saved;
   if (libraries.length === 1) return libraries[0].id;
   for (const library of libraries.slice(0, NOTEBOOK_PROBE_LIMIT)) {
-    if ((await countNotes(library.id)) > 0) return library.id;
+    try { if ((await countNotes(library.id)) > 0) return library.id; } catch { /* Skip it and look at the next notebook. */ }
   }
   return libraries[0].id;
 }
@@ -46,3 +49,7 @@ export function emptyListMessage(state: { loaded: boolean; failed: boolean; quer
   if (state.notebookCount > 1 && state.notebookName) return `“${state.notebookName}” has no notes yet. Your other notebooks are in the menu above.`;
   return 'Your next idea starts here.';
 }
+
+/** How long to wait before the next reconnect attempt: 3 s, then 6, 12, and never more than 30 s. A success resets to 3 s. */
+export const RECONNECT_DELAYS = [3000, 6000, 12000, 30000];
+export const nextReconnectDelay = (current: number): number => RECONNECT_DELAYS.find(delay => delay > current) ?? RECONNECT_DELAYS[RECONNECT_DELAYS.length - 1];

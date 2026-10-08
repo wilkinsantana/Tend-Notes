@@ -2,19 +2,19 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { hasGlobalLookup, rewriteGlobalLookup } from './scripts/globalLookup';
 const runtime = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).dependencies;
 export default defineConfig({
   // Direct-import browser fixtures and the lazy editor must share the same
   // initial optimizer graph; late discovery otherwise reloads active test pages.
   optimizeDeps: { include: [...Object.keys(runtime).filter(name => !['svelte', 'lucide-svelte'].includes(name)), 'markdown-it/lib/token.mjs'] },
   plugins: [svelte({ compilerOptions: { css: 'injected' } }), {
-    // Mermaid's lodash and cytoscape dependencies find the global object with Function('return this')(). The host's
-    // install scan rightly refuses any Function constructor, so ship the equivalent globalThis instead.
+    // See scripts/globalLookup.ts: the host's install scan refuses the Function constructor, so ship globalThis instead.
     name: 'no-function-constructor',
     enforce: 'pre',
     transform(code, id) {
-      if (!id.includes('/node_modules/') || !/Function\(\s*(['"])return this\1\s*\)\s*\(\)/.test(code)) return null;
-      return { code: code.replace(/Function\(\s*(['"])return this\1\s*\)\s*\(\)/g, 'globalThis'), map: null };
+      if (!id.includes('/node_modules/') || !hasGlobalLookup(code)) return null;
+      return { code: rewriteGlobalLookup(code), map: null };
     },
   }, {
     name: 'bundled-license-inventory',
