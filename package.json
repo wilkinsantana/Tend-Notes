@@ -46,6 +46,7 @@
     "@types/bun": "1.3.10"
   },
   "overrides": {
-    "devalue": "5.9.4"
+    "devalue": "5.9.4",
+    "katex": "0.18.7"
   }
 }
