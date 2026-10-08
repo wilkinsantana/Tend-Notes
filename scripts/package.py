@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import json
+import re
 from pathlib import Path
 import zipfile
 
@@ -13,6 +14,11 @@ files = {name: (root / name).read_bytes() for name in ['icon.svg', 'glyph.svg', 
 javascript = {path.relative_to(root / 'dist').as_posix(): path.read_bytes() for path in sorted((root / 'dist').rglob('*.js'))}
 assert 'index.js' in javascript, 'Missing extension entry: index.js'
 assert 'task-worker.js' in javascript, 'Missing task worker entry: task-worker.js'
+# The host's install scan refuses runtime string evaluation anywhere in the package, bundled dependencies included.
+forbidden = re.compile(r'\beval\s*\(|\bnew\s+Function\s*\(|(?:^|[^\w$])Function\s*\(\s*[\'"`]', re.M)
+for name, data in javascript.items():
+    found = forbidden.search(data.decode('utf-8', 'replace'))
+    assert not found, f'{name}: runtime string evaluation is not allowed ({found.group(0).strip()})'
 files.update(javascript)
 notices = []
 visited = set()

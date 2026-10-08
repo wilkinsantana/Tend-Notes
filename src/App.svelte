@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type, Share2, Settings2, Speech as SpeechIcon, Volume2, HelpCircle, Lock, LockOpen } from 'lucide-svelte';
+  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type, Share2, Settings2, Speech as SpeechIcon, Volume2, HelpCircle, Lock, LockOpen, Workflow } from 'lucide-svelte';
   import type { Host, Library, Note, Document, Documents, SpeechNativeReading, SpeechNativeVoice, SpeechTts } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import ResponsiveToolbar from './ResponsiveToolbar.svelte';
   import Preview from './Preview.svelte';
+  import { diagramStarter } from './diagramSource';
   import { runScopedShortcut } from './scopedShortcuts';
   import BacklinksPanel from './BacklinksPanel.svelte';
   import EditorFind from './EditorFind.svelte';
@@ -1283,6 +1284,15 @@
     commitEditorBody(body.slice(0, start) + inserted + body.slice(end), { start, end }, { start: start + inserted.length, end: start + inserted.length });
     mediaKind = null;
   }
+  function insertDiagram() {
+    if (!view || !editor || opening || creating || deleting || actionBusy || deletionUncertain || historyBlocked) return;
+    if (formattedWriting && writingSurface) { writingSurface.insertMarkdown('\n' + diagramStarter); return; }
+    if (!sourceEditor) return;
+    const body = editorBody, start = sourceEditor.selectionStart, end = sourceEditor.selectionEnd;
+    const lead = start === 0 || body[start - 1] === '\n' ? '' : '\n', inserted = lead + diagramStarter;
+    commitEditorBody(body.slice(0, start) + inserted + body.slice(end), { start, end }, { start: start + inserted.length, end: start + inserted.length });
+    void tick().then(() => { sourceEditor?.focus(); sourceEditor?.setSelectionRange(start + inserted.length, start + inserted.length); });
+  }
   function shortcuts(event: KeyboardEvent) {
     if (trashOpen || todoOpen || templatesOpen || createOpen || deleteOpen || reloadOpen || backupOpen || renameOpen || mediaKind || formulaSelection || linkDialog || dictationOpen || speechSettingsOpen || helpOpen || shareOpen) return;
     const inEditor = event.target === sourceEditor || !!writingSurface?.contains(event.target);
@@ -1435,6 +1445,7 @@
 {#snippet tool11()}<button class="icon" title="Insert link" aria-label="Insert link" onclick={() => format('[', '](https://)')}><Link size={16}/></button>{/snippet}
 {#snippet tool12()}<button class="icon" title="Inline code" aria-label="Inline code" onclick={() => format('`', '`')}><Code size={17}/></button>{/snippet}
 {#snippet tool13()}<button class="icon" title="Code block" aria-label="Code block" onclick={() => format('\n```text\n', '\n```\n')}><SquareCode size={17}/></button>{/snippet}
+{#snippet diagramTool()}<button class="icon" title="Diagram · flowchart starter" aria-label="Insert diagram" onclick={insertDiagram}><Workflow size={17}/></button>{/snippet}
 {#snippet tool14()}<button class="icon" title="Table" aria-label="Insert table" onclick={() => format('\n| Column | Column |\n| --- | --- |\n| ', ' |  |\n')}><Table2 size={16}/></button>{/snippet}
 {#snippet tool15()}<button class="icon" title="Insert formula" aria-label="Insert formula" onclick={openFormula}><Sigma size={17}/></button>{/snippet}
 {#snippet tool16()}<button class="icon" title="Divider" aria-label="Insert divider" onclick={() => format('\n\n---\n\n')}><Minus size={16}/></button>{/snippet}
@@ -1456,7 +1467,7 @@
           {label:'Lists and quotes',tools:[tool7,tool8,tool9,tool10]},
           {label:'Insert and attach',tools:[tool11,tool17,tool18,tool20]},
           {label:'Tables and formulas',tools:[tool14,tool15,tool16,...(formattedWriting ? [tableRow,tableColumn,removeRow,removeColumn] : [])]},
-          {label:'Code',tools:[tool12,tool13]}
+          {label:'Code',tools:[tool12,tool13,diagramTool]}
           ] : []),
           {label:'Audio',tools:[dictateTool,readAloudTool,voiceNoteTool,speechSettingsTool]}
         ]}/></div>{/if}

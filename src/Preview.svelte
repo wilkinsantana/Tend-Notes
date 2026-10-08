@@ -2,6 +2,7 @@
   import { renderDocument } from './markdown';
   import { clearSpeechParagraph, showSpeechParagraph } from './speechFollow';
   import type { Documents } from './host';
+  import { cachedDiagram, readDiagramTheme, renderDiagram, type DiagramResult, type DiagramTheme } from './diagram';
   let {content, documents, noteId, onnotelink, speechParagraphs = [], activeSpeechParagraph = null, followSpeech = true}: {content: string; documents: Documents; noteId: string; onnotelink?: (id:string)=>void; speechParagraphs?: string[]; activeSpeechParagraph?: number|null; followSpeech?: boolean} = $props();
   let element: HTMLDivElement;
   const rendered = $derived(renderDocument(content));
@@ -57,6 +58,44 @@
     queueMicrotask(() => { if(active) for(const button of element.querySelectorAll<HTMLButtonElement>('button[data-notes-media]')) { const item=result.media[Number(button.dataset.notesMedia)]; if(item?.local && item.kind !== 'document') void load(button); } });
     return () => { active=false; element.removeEventListener('click',click); element.querySelectorAll('audio').forEach(a=>a.pause()); urls.forEach(url=>URL.revokeObjectURL(url)); };
   });
+  // Diagrams: the fenced source stays in a code block; a rendered figure is placed after it and the block is hidden on success.
+  $effect(() => {
+    void rendered.html;
+    const blocks = [...element.querySelectorAll<HTMLElement>('pre[data-notes-diagram]')];
+    if (!blocks.length) return;
+    let active = true, timer = 0, frame = 0, drawn = '';
+    const show = (block: HTMLElement, result: DiagramResult) => {
+      let figure = block.nextElementSibling as HTMLElement | null;
+      if (!figure?.classList.contains('notes-diagram')) { figure = document.createElement('div'); figure.className = 'notes-diagram'; block.after(figure); }
+      if (result.ok) {
+        figure.className = 'notes-diagram'; figure.innerHTML = result.svg; block.hidden = true;
+      } else {
+        figure.className = 'notes-diagram-error'; figure.setAttribute('role', 'note'); figure.textContent = result.message; block.hidden = false;
+      }
+    };
+    async function draw(theme: DiagramTheme) {
+      drawn = theme.signature;
+      for (const block of blocks) {
+        const source = block.textContent ?? '';
+        const hit = cachedDiagram(source, theme);
+        if (hit) { show(block, hit); continue; }
+        const result = await renderDiagram(source, theme);
+        if (!active || drawn !== theme.signature) return;
+        show(block, result);
+      }
+    }
+    // Typing in split view re-renders the note on every key; wait for a pause before asking Mermaid.
+    const start = () => { const theme = readDiagramTheme(element); if (theme.signature !== drawn || blocks.some(block => !block.nextElementSibling?.classList.contains('notes-diagram') && !block.nextElementSibling?.classList.contains('notes-diagram-error'))) void draw(theme); };
+    const sync = () => { const theme = readDiagramTheme(element); for (const block of blocks) { const hit = cachedDiagram(block.textContent ?? '', theme); if (hit) show(block, hit); } };
+    sync();
+    timer = window.setTimeout(start, 250);
+    // Follow the Tend theme: re-render whenever the host changes tokens on any ancestor.
+    const watch = new MutationObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => { if (active) start(); }); });
+    for (let ancestor: HTMLElement | null = element; ancestor; ancestor = ancestor.parentElement) watch.observe(ancestor, { attributes: true, attributeFilter: ['style', 'class', 'data-theme'] });
+    const scheme = matchMedia('(prefers-color-scheme: dark)'), schemeChanged = () => start();
+    scheme.addEventListener('change', schemeChanged);
+    return () => { active = false; clearTimeout(timer); cancelAnimationFrame(frame); watch.disconnect(); scheme.removeEventListener('change', schemeChanged); };
+  });
   $effect(() => {
     const viewport = element.parentElement ?? element;
     showSpeechParagraph(viewport, speechParagraphs, activeSpeechParagraph, followSpeech);
@@ -71,5 +110,8 @@
   .rendered-markdown :global(.table-scroll){max-width:100%;overflow-x:auto;margin:12px 0;overscroll-behavior-x:contain}
   .rendered-markdown :global(.table-scroll table){width:max-content;min-width:100%;overflow-wrap:normal}
   .rendered-markdown :global(.table-scroll th),.rendered-markdown :global(.table-scroll td){min-width:120px;max-width:360px}
+  .rendered-markdown :global(.notes-diagram){max-width:100%;overflow-x:auto;margin:14px 0;text-align:center}
+  .rendered-markdown :global(.notes-diagram svg){max-width:100%;height:auto}
+  .rendered-markdown :global(.notes-diagram-error){margin:-6px 0 14px;padding:8px 12px;border-left:3px solid var(--warning,#d7ac64);background:var(--wash);color:var(--ink);font-size:13px;border-radius:0 6px 6px 0}
   @media(prefers-reduced-motion:reduce){.rendered-markdown :global([data-notes-reading="true"]){transition:none}}
 </style>

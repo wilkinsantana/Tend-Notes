@@ -41,5 +41,24 @@ class PackageReproducibilityTests(unittest.TestCase):
                 artifacts.append(archive.read_bytes())
             self.assertEqual(artifacts[0], artifacts[1])
 
+    def test_runtime_string_evaluation_in_any_bundled_file_fails_packaging(self):
+        for source in ['x = Function("return this")();', 'eval("1")', 'new Function("a", "return a")']:
+            with tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                (root / 'scripts').mkdir()
+                shutil.copyfile(SCRIPT, root / 'scripts/package.py')
+                (root / 'package.json').write_text(json.dumps({'version':'1.0.0'}))
+                (root / 'extension.json').write_text(json.dumps({'version':'1.0.0','id':'test.notes'}))
+                for name in ['icon.svg','glyph.svg','LICENSE','README.md']:
+                    (root / name).write_text(name)
+                (root / 'dist/chunks').mkdir(parents=True)
+                for name in ['index.js', 'task-worker.js']:
+                    (root / 'dist' / name).write_text('export {}')
+                (root / 'dist/chunks/dependency.js').write_text(source)
+                (root / 'dist/bundled-packages.json').write_text('[]')
+                result = subprocess.run([sys.executable, str(root / 'scripts/package.py')], capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0, source)
+                self.assertIn('runtime string evaluation', result.stderr)
+
 if __name__ == '__main__':
     unittest.main()

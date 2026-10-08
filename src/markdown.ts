@@ -2,6 +2,7 @@ import { linkedNoteId } from './backlinks';
 import { renderFormula } from './math';
 import { Marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { isDiagramFence, maxDiagramsPerNote } from './diagramSource';
 export const attachmentPattern = /^attachments\/[a-f0-9]{64}\.(?:png|jpg|gif|webp|ogg|webm|mp3|m4a|wav|pdf)$/;
 export function youtubeId(raw: string): string | null {
   try {
@@ -26,7 +27,14 @@ export function renderDocument(content: string): {html: string; media: Media[]} 
     const index = media.push(item) - 1;
     return `<button type="button" data-notes-media="${index}">${escape(item.kind === 'youtube' ? 'Load YouTube video' : item.kind === 'document' ? `Download PDF: ${item.label}` : item.local ? `Open ${item.kind}: ${item.label}` : `Load external image: ${item.label}`)}</button>`;
   };
+  let diagrams = 0;
   const parser = new Marked({gfm:true, breaks:false, async:false, renderer:{
+    // Diagram fences keep their source in a code block; the reading view swaps in a rendered SVG after Mermaid loads.
+    code({text, lang, codeBlockStyle}) {
+      if (codeBlockStyle === 'indented' || diagrams >= maxDiagramsPerNote || !isDiagramFence(lang, text)) return false;
+      diagrams++;
+      return `<pre data-notes-diagram="mermaid"><code>${escape(text)}</code></pre>\n`;
+    },
     // Source HTML cannot manufacture trusted media placeholders or executable elements.
     html({text}) { return escape(text); },
     image({href, text}) {
@@ -58,8 +66,8 @@ export function renderDocument(content: string): {html: string; media: Media[]} 
   parser.use({extensions:[{name:'legacyBold',level:'inline',start(src){return src.indexOf('**');},tokenizer(src){const match=/^\*\*([^*\n]+\S)[ \t]+\*\*/.exec(src);if(match)return {type:'legacyBold',raw:match[0],text:match[1]};},renderer(token){return `<strong>${escape(token.text as string)}</strong>`;}}]});
   const html = DOMPurify.sanitize(parser.parse(content) as string, {
     ALLOWED_TAGS:['p','br','hr','h1','h2','h3','h4','h5','h6','strong','em','del','blockquote','ul','ol','li','pre','code','a','table','thead','tbody','tr','th','td','input','button','span'],
-    ALLOWED_ATTR:['href','title','type','checked','disabled','start','align','rel','target','data-notes-media','data-notes-math','data-notes-link'],
-    ADD_URI_SAFE_ATTR:['data-notes-media','data-notes-math','data-notes-link','type'],
+    ALLOWED_ATTR:['href','title','type','checked','disabled','start','align','rel','target','data-notes-media','data-notes-math','data-notes-link','data-notes-diagram'],
+    ADD_URI_SAFE_ATTR:['data-notes-media','data-notes-math','data-notes-link','data-notes-diagram','type'],
     ALLOWED_URI_REGEXP:/^(?:https:\/\/|mailto:)/i, ALLOW_DATA_ATTR:false,
   });
   return {html: html.replace(/<span data-notes-math="(\d+)"><\/span>/g, (_, index) => formulas[Number(index)] ?? ''),media};
