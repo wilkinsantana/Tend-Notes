@@ -135,14 +135,12 @@ test('narrow sidebar does not overflow and themed transparent popovers stay read
 test('pointer selections release focus while keyboard selections retain their place', async ({ page }) => {
   await seed(page); await page.goto('/');
   const aside = sidebar(page);
-  const notebook = aside.getByLabel('Notebook', { exact: true });
-  // A pointer-opened native select emits change when an option is chosen.
-  await notebook.dispatchEvent('pointerdown');
-  await notebook.focus(); await notebook.selectOption('work');
-  await expect(notebook).not.toBeFocused();
+  const notebook = aside.locator('#notes-library');
+  // Picking a notebook (pointer or keyboard) returns focus to the heading button, which stays enabled.
+  await notebook.click(); await aside.getByRole('menuitemradio', { name: 'Work notes', exact: true }).click();
+  await expect(notebook).toBeFocused();
   await expect(notebook).toBeEnabled();
-  await notebook.focus(); await notebook.press('Tab');
-  await expect(aside.getByRole('button', { name: 'Search notes', exact: true })).toBeFocused();
+  await expect(notebook).toHaveAttribute('aria-expanded', 'false');
   const sort = aside.getByRole('button', { name: 'Sort notes', exact: true });
   await sort.click(); await aside.getByRole('button', { name: 'Title A–Z', exact: true }).click();
   await expect(sort).not.toBeFocused();

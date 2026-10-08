@@ -130,6 +130,11 @@ exported diagram image; the Mermaid text travels with the note.
 
 ## A compact writing sidebar
 
+The heading above the note list is the notebook picker: it names the open
+notebook with its note count, and opens a menu to switch notebooks (arrow keys,
+Enter or Space to choose, Escape to close). An empty notebook says so and offers
+Show notebooks, so a missing note list is never a mystery.
+
 The main icon row holds New note, Quick capture, Today, Templates, and Add
 notebook. The smaller row below groups color, pinned notes, sorting, and ToDo;
 tags appear when available. Color filters show swatches alongside their names.
@@ -137,7 +142,7 @@ Hover over an icon for its label, or reach it with the keyboard. Right-click a
 note (or press Shift+F10) for Rename, Pin, Color, Export, and Delete. These
 actions work on the chosen note without opening it.
 
-Open search beside the notebook selector. Escape closes search and clears its
+Open search at the top of the sidebar. Escape closes search and clears its
 filter. Available browser recovery copies appear as a history icon with a count
 beside Trash, directly left of Refresh above the note list. Import and
 Export & backups remain together at the bottom.

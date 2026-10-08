@@ -42,11 +42,19 @@ export async function chooseNotebook(libraries: Library[], saved: string, countN
   return libraries[0].id;
 }
 
+/** The notes list heading is the notebook picker: what it shows and what a screen reader announces. */
+export function notebookHeading(state: { name?: string; count: number; loaded: boolean; pinned: boolean }): { shown: string; count: string; label: string } {
+  const name = state.name || 'Your notes';
+  if (!state.loaded) return { shown: name, count: '', label: `Notebook: ${name}. Change notebook` };
+  const noun = state.pinned ? `pinned note${state.count === 1 ? '' : 's'}` : `note${state.count === 1 ? '' : 's'}`;
+  return { shown: name, count: String(state.count), label: `Notebook: ${name}, ${state.count} ${noun}. Change notebook` };
+}
+
 /** The sidebar's message when the open notebook shows no notes. */
 export function emptyListMessage(state: { loaded: boolean; failed: boolean; query: string; notebookName?: string; notebookCount: number }): string {
   if (!state.loaded) return state.failed ? 'Reconnecting to your notes…' : 'Opening your notes…';
   if (state.query) return 'No matching notes.';
-  if (state.notebookCount > 1 && state.notebookName) return `“${state.notebookName}” has no notes yet. Your other notebooks are in the menu above.`;
+  if (state.notebookCount > 1 && state.notebookName) return `“${state.notebookName}” has no notes yet.`;
   return 'Your next idea starts here.';
 }
 

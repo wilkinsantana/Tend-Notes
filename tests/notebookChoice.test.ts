@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chooseNotebook, emptyListMessage, nextReconnectDelay, notebookStorageKey, rememberNotebook, savedNotebook, NOTEBOOK_PROBE_LIMIT } from '../src/notebookChoice';
+import { chooseNotebook, emptyListMessage, nextReconnectDelay, notebookHeading, notebookStorageKey, rememberNotebook, savedNotebook, NOTEBOOK_PROBE_LIMIT } from '../src/notebookChoice';
 
 const lib = (id: string, name = id) => ({ id, name, canCreate: true });
 // Mirrors production on 2026-10-08: the newest notebook is empty, the notes live in older ones.
@@ -90,11 +90,22 @@ describe('emptyListMessage', () => {
     expect(emptyListMessage({ ...base, loaded: false })).toBe('Opening your notes…');
     expect(emptyListMessage({ ...base, loaded: false, failed: true })).toBe('Reconnecting to your notes…');
   });
-  test('points to the other notebooks when this one is empty', () => {
-    expect(emptyListMessage(base)).toBe('“Church” has no notes yet. Your other notebooks are in the menu above.');
+  test('names the empty notebook (the heading menu lists the others)', () => {
+    expect(emptyListMessage(base)).toBe('“Church” has no notes yet.');
   });
   test('keeps the existing wording for a single notebook and for searches', () => {
     expect(emptyListMessage({ ...base, notebookCount: 1 })).toBe('Your next idea starts here.');
     expect(emptyListMessage({ ...base, query: 'go' })).toBe('No matching notes.');
+  });
+});
+
+describe('notebookHeading', () => {
+  test('names the notebook and its count', () => {
+    expect(notebookHeading({ name: 'Learning Go', count: 9, loaded: true, pinned: false })).toEqual({ shown: 'Learning Go', count: '9', label: 'Notebook: Learning Go, 9 notes. Change notebook' });
+    expect(notebookHeading({ name: 'Church', count: 1, loaded: true, pinned: false }).label).toBe('Notebook: Church, 1 note. Change notebook');
+    expect(notebookHeading({ name: 'Church', count: 2, loaded: true, pinned: true }).label).toBe('Notebook: Church, 2 pinned notes. Change notebook');
+  });
+  test('shows no count until the list has loaded', () => {
+    expect(notebookHeading({ name: 'Church', count: 0, loaded: false, pinned: false })).toEqual({ shown: 'Church', count: '', label: 'Notebook: Church. Change notebook' });
   });
 });

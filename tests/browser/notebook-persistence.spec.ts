@@ -38,23 +38,23 @@ test.beforeEach(async ({ page }) => { await page.goto('/'); await page.evaluate(
 
 test('a saved notebook missing from one response opens a fallback without overwriting the saved choice', async ({ page }) => {
   await mountApp(page, { saved: 'beta', omit: ['beta'] });
-  await expect(page.locator('#notes-library')).toHaveValue('alpha');
+  await expect(page.locator('#notes-library')).toHaveAttribute('aria-label',/^Notebook: Alpha/);
   await expect(page.getByRole('button', { name: /^Alpha note / })).toBeVisible();
   expect(await stored(page)).toBe('beta');
   // The next load sees the notebook again and reopens it.
   await page.reload();
   await mountApp(page);
-  await expect(page.locator('#notes-library')).toHaveValue('beta');
+  await expect(page.locator('#notes-library')).toHaveAttribute('aria-label',/^Notebook: Beta/);
   await expect(page.getByRole('button', { name: /^Beta note / })).toBeVisible();
   // Choosing a notebook is what is remembered.
-  await page.locator('#notes-library').selectOption('alpha');
+  await page.locator('#notes-library').click(); await page.getByRole('menuitemradio', { name: 'Alpha', exact: true }).click();
   await expect(page.getByRole('button', { name: /^Alpha note / })).toBeVisible();
   expect(await stored(page)).toBe('alpha');
 });
 
 test('with no saved choice, a notebook whose count fails is skipped and Notes still opens', async ({ page }) => {
   await mountApp(page, { brokenLists: ['alpha'] });
-  await expect(page.locator('#notes-library')).toHaveValue('beta');
+  await expect(page.locator('#notes-library')).toHaveAttribute('aria-label',/^Notebook: Beta/);
   await expect(page.getByRole('button', { name: /^Beta note / })).toBeVisible();
   await expect(page.getByText('Reconnecting to your notes…')).toHaveCount(0);
   expect(await stored(page)).toBeNull(); // an automatic pick is not the person's choice

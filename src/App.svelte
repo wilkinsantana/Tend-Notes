@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type, Share2, Settings2, Speech as SpeechIcon, Volume2, HelpCircle, Lock, LockOpen, Workflow } from 'lucide-svelte';
+  import { LayoutTemplate, BookOpen, Plus, Search, Pin, Tag, Maximize, Minimize, Zap, FileText, PanelLeftClose, PanelLeftOpen, Download, Upload, Trash2, Check, LoaderCircle, Bold, Italic, Heading2, List, Link, Code, Columns2, FolderOpen, PenLine, Eye, X, ArrowLeft, RefreshCw, FilePlus2, BookPlus, Palette, TextCursorInput, Strikethrough, ListOrdered, ListTodo, Quote, SquareCode, Table2, Minus, ImagePlus, Mic, Youtube, CalendarDays, ArrowDownWideNarrow, Undo2, Redo2, History, ListTree, Type, Share2, Settings2, Speech as SpeechIcon, Volume2, HelpCircle, Lock, LockOpen, Workflow, ChevronDown } from 'lucide-svelte';
   import type { Host, Library, Note, Document, Documents, SpeechNativeReading, SpeechNativeVoice, SpeechTts } from './host';
   import { Drafts, NoteSession, MAX_BYTES, type View, type Draft } from './session';
   import ResponsiveToolbar from './ResponsiveToolbar.svelte';
@@ -40,7 +40,7 @@
   import { markdownToSpeech } from './speechText';
   import { createSpeechPlayback } from './speechPlayback';
   import { SpeechReplay, speechReplayParagraphs } from './speechReplay';
-  import { chooseNotebook, emptyListMessage, nextReconnectDelay, rememberNotebook, savedNotebook } from './notebookChoice';
+  import { chooseNotebook, emptyListMessage, nextReconnectDelay, notebookHeading, rememberNotebook, savedNotebook } from './notebookChoice';
   const speechReplay = new SpeechReplay();
   let replayNoteId: string | null = null;
   let previewContainer = $state<HTMLDivElement>();
@@ -933,9 +933,54 @@
       libraryId = id; choose(id); query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; notes = []; listLoaded = false; listFailed = false; await loadList(); void buildSearch(id);
     } finally { opening = false; }
   }
-  function selectLibrary(event: Event) {
-    const select = event.currentTarget as HTMLSelectElement;
-    void changeLibrary(select.value).finally(() => { select.value = libraryId; });
+  // The notes list heading is the notebook picker: a menu button (arrow keys move, Enter or Space picks, Escape closes
+  // and returns focus to the heading). Switching goes through changeLibrary, so the draft is saved first.
+  const notebookTitle = $derived(notebookHeading({ name: selectedLibrary?.name, count: pinnedFilter ? facets.pinned : facets.total, loaded: listLoaded, pinned: pinnedFilter }));
+  let notebookMenuOpen = $state(false);
+  let notebookTrigger = $state<HTMLButtonElement>();
+  let notebookMenu = $state<HTMLElement>();
+  const notebookItems = () => [...(notebookMenu?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [])];
+  async function openNotebookMenu(start: 'current' | 'first' | 'last' = 'current') {
+    if (!libraries.length || opening || notebookMenuOpen && start === 'current') return;
+    closeFilter(); notebookMenuOpen = true; await tick();
+    const items = notebookItems();
+    (start === 'first' ? items[0] : start === 'last' ? items[items.length - 1] : items.find(item => item.getAttribute('aria-checked') === 'true') ?? items[0])?.focus();
+  }
+  function closeNotebookMenu(restoreFocus = true) {
+    if (!notebookMenuOpen) return;
+    notebookMenuOpen = false;
+    if (restoreFocus) notebookTrigger?.focus();
+  }
+  function pickNotebook(id: string) {
+    closeNotebookMenu();
+    if (id === libraryId) return;
+    // The heading is disabled while the switch runs, which drops focus; give it back unless the person moved on.
+    void changeLibrary(id).finally(async () => {
+      await tick();
+      const active = (notebookTrigger?.getRootNode() as unknown as DocumentOrShadowRoot | undefined)?.activeElement;
+      if (!active || active === document.body) notebookTrigger?.focus();
+    });
+  }
+  function notebookTriggerKey(event: KeyboardEvent) {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault(); event.stopPropagation();
+    void openNotebookMenu(event.key === 'ArrowUp' ? 'last' : 'first');
+  }
+  function notebookMenuKey(event: KeyboardEvent) {
+    const items = notebookItems(); const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const move = (index: number) => { event.preventDefault(); event.stopPropagation(); items[(index + items.length) % items.length]?.focus(); };
+    if (event.key === 'ArrowDown') move(at + 1);
+    else if (event.key === 'ArrowUp') move(at < 0 ? -1 : at - 1);
+    else if (event.key === 'Home') move(0);
+    else if (event.key === 'End') move(-1);
+    else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeNotebookMenu(); }
+    else if (event.key === 'Tab') closeNotebookMenu(false);
+  }
+  function dismissNotebookMenu(node: HTMLElement) {
+    const outside = (event: PointerEvent) => { if (event.target instanceof Node && !node.contains(event.target)) closeNotebookMenu(false); };
+    const leave = (event: FocusEvent) => { if (event.relatedTarget instanceof Node && !node.contains(event.relatedTarget)) closeNotebookMenu(false); };
+    document.addEventListener('pointerdown', outside); node.addEventListener('focusout', leave);
+    return { destroy() { document.removeEventListener('pointerdown', outside); node.removeEventListener('focusout', leave); } };
   }
   async function showRecoveries() {
     if (opening || creating || deleting) return;
@@ -1405,8 +1450,6 @@
     <aside inert={templatesOpen || todoOpen || !!formulaSelection || dictationOpen || speechSettingsOpen || helpOpen}>
       <div class="brand"><span class="brand-icon"><BookOpen size={20}/></span><div><strong>Tend Notes</strong><small>A little space to think.</small></div></div>
       <div class="library-picker">
-        <label class="sr-only" for="notes-library">Notebook</label>
-        <select id="notes-library" value={libraryId} onchange={selectLibrary} disabled={!libraries.length || opening}>{#each libraries as library}<option value={library.id}>{library.name}</option>{/each}</select>
         <button class="icon" class:chosen={searchOpen} bind:this={searchTrigger} aria-label="Search notes" title="Search notes" aria-expanded={searchOpen} aria-controls="notes-search" onclick={() => void toggleSearch()}><Search size={16}/></button>
         <button class="icon" aria-label="Rename notebook" title="Rename notebook" disabled={!selectedLibrary || actionBusy} onclick={() => beginRename()}><TextCursorInput size={15}/></button>
         <button class="icon notes-help-trigger sidebar-help" class:has-note={!!view && !todoOpen && !trashOpen} aria-label="Notes guide" title="Notes guide" aria-haspopup="dialog" aria-expanded={helpOpen} onclick={showHelp}><HelpCircle size={15}/></button>
@@ -1435,8 +1478,10 @@
           {:else}<div id="notes-tags" role="group" aria-label="Note tags"><span class="popover-label">FILTER BY TAG</span><div class="tag-filters">{#each facets.tags as tag}<button class:chosen={tagFilter === tag.name} aria-pressed={tagFilter === tag.name} onclick={() => { filterTag(tag.name); closeFilter(true); }}>#{tag.name}<small>{tag.count}</small></button>{/each}</div>{#if tagFilter}<button class="filter-option" onclick={() => { tagFilter = ''; closeFilter(true); void loadList(); }}><X size={14}/> Clear tag</button>{/if}</div>{/if}
         </div>{/if}
       </div>
-      <div class="list-heading"><span>{pinnedFilter ? 'PINNED NOTES' : 'YOUR NOTES'} <small>{pinnedFilter ? facets.pinned : facets.total}</small></span><div class="list-heading-actions">{#if !mobileEditor && hasLoadedNotes}<button class="icon continue-writing" aria-label="Continue writing" title="Continue writing" disabled={opening} onclick={() => void continueWriting()}><PenLine size={14}/></button>{/if}{#if recoveries.length}<button class="icon recovery-copies" aria-label={`Recovery copies (${recoveries.length})`} title={`Recovery copies (${recoveries.length})`} onclick={() => void showRecoveries()} disabled={opening || creating || deleting}><History size={14}/><small>{recoveries.length}</small></button>{/if}{#if trashSupported}<button class="icon" aria-label="Trash" title="Trash" onclick={() => void openTrash()} disabled={opening || actionBusy}><Trash2 size={14}/></button>{/if}<button class="icon" aria-label="Refresh notes" title="Refresh notes" onclick={() => { void loadList(); void buildSearch(libraryId); }} disabled={listLoading}><RefreshCw size={14} class={listLoading ? 'spin' : ''}/></button></div></div>
-      <div class="note-list" aria-label="Notes">
+      <div class="list-heading"><div class="notebook-picker" use:dismissNotebookMenu><h2><button id="notes-library" class="notebook-trigger" bind:this={notebookTrigger} aria-haspopup="menu" aria-expanded={notebookMenuOpen} aria-controls={notebookMenuOpen ? 'notes-notebook-menu' : undefined} aria-label={notebookTitle.label} title="Change notebook" disabled={!libraries.length || opening} onclick={() => notebookMenuOpen ? closeNotebookMenu() : void openNotebookMenu()} onkeydown={notebookTriggerKey}><span class="notebook-name">{notebookTitle.shown}</span>{#if notebookTitle.count}<small>{pinnedFilter ? `${notebookTitle.count} pinned` : notebookTitle.count}</small>{/if}<ChevronDown size={13} aria-hidden="true"/></button></h2>
+        {#if notebookMenuOpen}<div id="notes-notebook-menu" class="filter-popover notebook-popover" role="menu" aria-label="Notebooks" bind:this={notebookMenu} tabindex="-1" onkeydown={notebookMenuKey}>{#each libraries as library (library.id)}<button class="filter-option" role="menuitemradio" aria-checked={library.id === libraryId} onclick={() => pickNotebook(library.id)}><span>{library.name}</span>{#if library.id === libraryId}<Check size={14} aria-hidden="true"/>{/if}</button>{/each}</div>{/if}
+      </div><div class="list-heading-actions">{#if !mobileEditor && hasLoadedNotes}<button class="icon continue-writing" aria-label="Continue writing" title="Continue writing" disabled={opening} onclick={() => void continueWriting()}><PenLine size={14}/></button>{/if}{#if recoveries.length}<button class="icon recovery-copies" aria-label={`Recovery copies (${recoveries.length})`} title={`Recovery copies (${recoveries.length})`} onclick={() => void showRecoveries()} disabled={opening || creating || deleting}><History size={14}/><small>{recoveries.length}</small></button>{/if}{#if trashSupported}<button class="icon" aria-label="Trash" title="Trash" onclick={() => void openTrash()} disabled={opening || actionBusy}><Trash2 size={14}/></button>{/if}<button class="icon" aria-label="Refresh notes" title="Refresh notes" onclick={() => { void loadList(); void buildSearch(libraryId); }} disabled={listLoading}><RefreshCw size={14} class={listLoading ? 'spin' : ''}/></button></div></div>
+      <div class="note-list" role="region" aria-labelledby="notes-library">
         {#each notes as note (note.id)}
           <div class="note" role="group" oncontextmenu={event => showNoteContext(event,note)} onkeydown={event => showNoteContext(event,note)} data-note-color={note.color ?? 'none'} class:selected={view?.document.id === note.id}>
             <button class="note-open" aria-label={`${title(note.name)} ${date(note.modifiedAt)} Markdown`} onclick={() => void open(note)} disabled={opening || actionBusy} aria-pressed={view?.document.id === note.id}><FileText size={16}/><strong>{title(note.name)}</strong></button>
@@ -1450,7 +1495,7 @@
             {#if note.tags?.length}<span class="note-tags">{note.tags.map(tag => '#' + tag).join('  ')}</span>{/if}
           </div>
         {:else}
-          <div class="list-empty" role="status"><FileText size={22}/><p>{emptyListMessage({ loaded: listLoaded, failed: notesUnreachable, query, notebookName: selectedLibrary?.name, notebookCount: libraries.length })}</p>{#if notesUnreachable}<button class="quiet" onclick={retryNotes}>Try again</button>{/if}</div>
+          <div class="list-empty" role="status"><FileText size={22}/><p>{emptyListMessage({ loaded: listLoaded, failed: notesUnreachable, query, notebookName: selectedLibrary?.name, notebookCount: libraries.length })}</p>{#if notesUnreachable}<button class="quiet" onclick={retryNotes}>Try again</button>{:else if listLoaded && !query && libraries.length > 1}<button class="quiet show-notebooks" onclick={() => void openNotebookMenu()}>Show notebooks</button>{/if}</div>
         {/each}
         {#if nextOffset !== null}<button class="quiet more" onclick={() => void loadList(true)} disabled={listLoading}>Load more notes</button>{/if}
       </div>
@@ -1602,12 +1647,12 @@
 
   /* Sidebar hierarchy: notebook, capture, smaller filters, then the notes. */
   aside{padding:16px 12px 10px;overflow:auto}.brand{margin:0 4px 13px;gap:9px}.brand-icon{width:32px;height:36px;border-radius:10px}.brand strong{font-size:14px}.brand small{font-size:9px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-  .library-picker{display:flex;align-items:center;gap:2px;padding:0 2px;margin:0 0 8px}.library-picker select{flex:1;width:0;min-width:0;margin:0;padding:5px 0;font-size:12px;text-overflow:ellipsis}.library-picker .icon{width:28px;height:30px;color:var(--soft)}.library-picker .chosen{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  .library-picker{display:flex;align-items:center;gap:2px;padding:0 2px;margin:0 0 8px}.library-picker{justify-content:flex-start}.library-picker .icon{width:28px;height:30px;color:var(--soft)}.library-picker .chosen{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
   .capture-actions{gap:6px;margin:0 0 5px}.capture-actions button{height:36px;border-radius:8px}.filter-tools{position:relative;display:flex;align-items:center;justify-content:space-around;gap:2px;padding:2px 3px 5px;border-bottom:1px solid var(--line);flex-shrink:0}.filter-tools>.icon{width:34px;height:32px;color:var(--soft)}.filter-tools>.chosen,.filter-tools>.icon[aria-expanded="true"]{background:color-mix(in srgb,var(--accent) 11%,transparent);color:var(--accent)}.active-swatch{width:13px;height:13px;border-radius:50%;background:var(--note-color);box-shadow:0 0 0 3px color-mix(in srgb,var(--note-color) 18%,transparent)}
   .filter-popover{position:absolute;z-index:10;top:calc(100% + 4px);left:0;right:0;padding:10px;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px #0005;color:var(--ink)}.popover-label{display:block;font-size:9px;letter-spacing:1.1px;color:var(--soft);padding:1px 5px 7px;font-weight:600}.filter-option{width:100%;display:flex;align-items:center;gap:8px;text-align:left;padding:8px;border:0;border-radius:7px;background:none;font-size:11px}.filter-option>span:first-of-type{flex:1}.filter-option[aria-pressed="true"]{color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,transparent)}.filter-option:hover,.filter-swatches button:hover{background:var(--wash)}.filter-swatches{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:7px}.filter-swatches button{display:flex;flex-direction:column;align-items:center;gap:5px;border:0;border-radius:8px;background:none;padding:7px 2px;font-size:10px}.filter-swatch{height:25px;width:25px;display:grid;place-items:center;border-radius:50%;background:color-mix(in srgb,var(--note-color) 65%,var(--paper));color:var(--ink);border:1px solid color-mix(in srgb,var(--note-color) 80%,var(--line))}.filter-swatches .chosen .filter-swatch{outline:2px solid var(--note-color);outline-offset:2px}.filter-popover .tag-filters{max-height:150px}
-  .search{padding:4px 5px 4px 9px;margin:0 0 8px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}.search .icon{width:25px;height:27px}.search input{min-width:0}.list-heading{margin:7px 2px 6px;font-size:9px;letter-spacing:1.1px}.list-heading>span{display:flex;align-items:center;gap:6px}.list-heading small{font-size:9px;letter-spacing:0;opacity:.8}.list-heading-actions{display:flex;gap:0}.list-heading-actions .icon{width:26px;height:28px;color:var(--soft)}.sidebar-footer{margin-top:10px;padding-top:8px}.footer-tools{display:flex;align-items:center;gap:2px}.footer-tools small{flex:1;font-size:9px;color:var(--soft);padding-left:3px}.footer-tools .icon{width:28px;height:30px;color:var(--soft)}
+  .search{padding:4px 5px 4px 9px;margin:0 0 8px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}.search .icon{width:25px;height:27px}.search input{min-width:0}.list-heading{margin:7px 2px 6px;font-size:9px;letter-spacing:1.1px}.list-heading{position:relative}.notebook-picker{flex:1;min-width:0;display:flex}.notebook-picker h2{margin:0;font:inherit;letter-spacing:inherit;min-width:0;display:flex}.notebook-picker .notebook-trigger{display:flex;align-items:center;gap:6px;min-width:0;min-height:28px;padding:3px 6px;margin-left:-6px;border:0;border-radius:7px;background:none;color:var(--ink);font-size:10px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase}.notebook-trigger:hover,.notebook-trigger[aria-expanded="true"]{background:color-mix(in srgb,var(--accent) 11%,transparent);color:var(--accent)}.notebook-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.notebook-trigger small{flex-shrink:0;font-weight:600;color:var(--soft)}.notebook-trigger :global(svg){flex-shrink:0;transition:transform .15s}.notebook-trigger[aria-expanded="true"] :global(svg){transform:rotate(180deg)}.notebook-popover{max-height:min(280px,50vh);overflow:auto;padding:6px;text-transform:none;letter-spacing:0;font-weight:400}.notebook-popover .filter-option{font-size:12px;min-height:34px}.notebook-popover .filter-option span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.list-heading-actions{flex-shrink:0}.show-notebooks{margin:6px auto 0;color:var(--accent);text-decoration:underline}.list-heading small{font-size:9px;letter-spacing:0;opacity:.8}.list-heading-actions{display:flex;gap:0}.list-heading-actions .icon{width:26px;height:28px;color:var(--soft)}.sidebar-footer{margin-top:10px;padding-top:8px}.footer-tools{display:flex;align-items:center;gap:2px}.footer-tools small{flex:1;font-size:9px;color:var(--soft);padding-left:3px}.footer-tools .icon{width:28px;height:30px;color:var(--soft)}
   .list-heading-actions .recovery-copies{position:relative;color:var(--accent)}.recovery-copies small{position:absolute;right:-2px;top:-2px;min-width:12px;padding:1px 3px;border-radius:6px;background:var(--wash);color:var(--accent);font-size:8px;line-height:12px;letter-spacing:0}
-  @media(pointer:coarse){.filter-tools>.icon{height:40px;width:40px}.library-picker .icon,.list-heading-actions .icon,.footer-tools .icon{height:38px;width:36px}.capture-actions button{height:42px}.filter-swatches button{min-height:58px}}
+  @media(pointer:coarse){.notebook-trigger{min-height:38px}.notebook-popover .filter-option{min-height:42px}.filter-tools>.icon{height:40px;width:40px}.library-picker .icon,.list-heading-actions .icon,.footer-tools .icon{height:38px;width:36px}.capture-actions button{height:42px}.filter-swatches button{min-height:58px}}
 
   .formatting{overflow:visible!important;display:block}
 </style>

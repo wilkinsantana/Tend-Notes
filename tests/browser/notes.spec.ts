@@ -170,10 +170,10 @@ test('notebook switching flushes newer typing and freezes transition edits', asy
   const editor=page.getByRole('textbox',{name:'Note Markdown'});
   await editor.fill('First captured version'); await page.getByRole('button',{name:'Save now'}).click();
   await editor.fill('Newer typing before switching');
-  await page.getByLabel('Notebook',{exact:true}).selectOption('work');
+  await page.locator('#notes-library').click(); await page.getByRole('menuitemradio',{name:'Work notes',exact:true}).click();
   await expect(editor).not.toBeEditable();
   await expect(page.getByText('Make room for an idea.')).toBeVisible();
-  await page.getByLabel('Notebook',{exact:true}).selectOption('personal');
+  await page.locator('#notes-library').click(); await page.getByRole('menuitemradio',{name:'Personal notes',exact:true}).click();
   await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
   await expect(editor).toHaveValue('Newer typing before switching');
 });
@@ -276,8 +276,9 @@ test('tags, pins and theme-aware colors organize notes without exposing metadata
   await expect(page.getByRole('button',{name:'Unpin note',exact:true})).toHaveAttribute('aria-pressed','true');
   await expect(editor).toHaveValue(original);
   await page.getByRole('button',{name:'Preview light theme'}).click();
-  await expect(page.locator('#notes-library option').first()).toHaveCSS('background-color','rgb(241, 244, 239)');
-  await expect(page.locator('#notes-library option').first()).toHaveCSS('color','rgb(38, 62, 56)');
+  await page.locator('#notes-library').click();
+  await expect(page.locator('#notes-notebook-menu')).toHaveCSS('background-color','rgb(250, 251, 248)');
+  await expect(page.getByRole('menuitemradio').first()).toHaveCSS('color','rgb(38, 62, 56)');
 });
 
 test('backup dialog offers ZIPs, connected storage, scheduling and download status on narrow screens', async ({page}) => {
@@ -374,7 +375,7 @@ test('list actions rename, pin, color and delete another note without opening it
   await page.getByRole('button',{name:'Rename notebook',exact:true}).click();
   await page.getByLabel('Notebook name',{exact:true}).fill('My ideas');
   await page.getByRole('button',{name:'Save name',exact:true}).click();
-  await expect(page.locator('#notes-library option:checked')).toHaveText('My ideas');
+  await expect(page.locator('#notes-library')).toHaveAttribute('aria-label',/^Notebook: My ideas, /);
   await page.getByRole('button',{name:'Delete Saved thoughts',exact:true}).click();
   await page.getByRole('dialog',{name:'Delete note',exact:true}).getByRole('button',{name:'Delete note',exact:true}).click();
   await expect(page.getByRole('button',{name:/Saved thoughts.*Markdown/})).toHaveCount(0);
@@ -543,13 +544,13 @@ test('panel transparency changes canvas and sidebar without fading text or dialo
 test('reopens the notebook chosen before a reload, as after a Tend update', async ({page}) => {
   await page.goto('/');
   await expect(page.getByRole('button',{name:/Small things worth keeping.*Markdown/})).toBeVisible();
-  await page.getByLabel('Notebook',{exact:true}).selectOption('work');
-  await expect(page.getByText('“Work notes” has no notes yet. Your other notebooks are in the menu above.')).toBeVisible();
+  await page.locator('#notes-library').click(); await page.getByRole('menuitemradio',{name:'Work notes',exact:true}).click();
+  await expect(page.getByText('“Work notes” has no notes yet.',{exact:true})).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel('Notebook',{exact:true})).toHaveValue('work');
-  await page.getByLabel('Notebook',{exact:true}).selectOption('personal');
+  await expect(page.locator('#notes-library')).toHaveAttribute('aria-label',/^Notebook: Work notes/);
+  await page.locator('#notes-library').click(); await page.getByRole('menuitemradio',{name:'Personal notes',exact:true}).click();
   await page.reload();
-  await expect(page.getByLabel('Notebook',{exact:true})).toHaveValue('personal');
+  await expect(page.locator('#notes-library')).toHaveAttribute('aria-label',/^Notebook: Personal notes/);
   await expect(page.getByRole('button',{name:/Small things worth keeping.*Markdown/})).toBeVisible();
 });
 
@@ -562,4 +563,63 @@ test('an unreachable Tend shows reconnecting, never an empty notebook, and recov
   await page.evaluate(()=>{(window as any).notesDemo.unreachable=false;});
   await expect(page.getByRole('button',{name:/Small things worth keeping.*Markdown/})).toBeVisible({timeout:8000});
   await expect(page.getByRole('heading',{name:'Reconnecting to your notes…'})).toHaveCount(0);
+});
+
+test('the notes list heading is the notebook picker: name, count, switching, keyboard, empty-notebook link', async ({page}) => {
+  await page.goto('/');
+  const aside=page.getByRole('complementary');
+  const heading=aside.getByRole('button',{name:/^Notebook: Personal notes, 1 note\. Change notebook$/});
+  await expect(heading).toBeVisible();
+  await expect(heading).toContainText('Personal notes'); await expect(heading).toContainText('1');
+  await expect(heading).toHaveAttribute('aria-haspopup','menu'); await expect(heading).toHaveAttribute('aria-expanded','false');
+  // No second notebook selector remains, and the list is labelled by the heading.
+  await expect(aside.locator('select')).toHaveCount(0);
+  await expect(aside.getByRole('region',{name:/^Notebook: Personal notes/})).toBeVisible();
+  const box=await heading.boundingBox(); const list=await page.locator('.note-list').boundingBox();
+  expect(box!.y).toBeLessThan(list!.y); expect(list!.y-box!.y).toBeLessThan(90);
+  // Pointer: open, switch, the heading and the list follow.
+  await heading.click();
+  const menu=page.getByRole('menu',{name:'Notebooks'});
+  await expect(menu.getByRole('menuitemradio')).toHaveCount(2);
+  await expect(menu.getByRole('menuitemradio',{name:'Personal notes'})).toHaveAttribute('aria-checked','true');
+  await menu.getByRole('menuitemradio',{name:'Work notes'}).click();
+  await expect(menu).toHaveCount(0);
+  const work=aside.getByRole('button',{name:/^Notebook: Work notes, 0 notes\. Change notebook$/});
+  await expect(work).toBeFocused(); await expect(page.locator('.note-list .note')).toHaveCount(0);
+  // Empty notebook: plain message plus a link that opens the same menu.
+  await expect(page.getByText('“Work notes” has no notes yet.',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Show notebooks',exact:true}).click();
+  await expect(page.getByRole('menu',{name:'Notebooks'})).toBeVisible();
+  await expect(page.getByRole('menuitemradio',{name:'Work notes'})).toBeFocused();
+  // Keyboard: Escape closes and returns focus; Enter opens; arrows move; Enter picks.
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0); await expect(work).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menuitemradio',{name:'Work notes'})).toBeFocused();
+  await page.keyboard.press('ArrowUp'); await expect(page.getByRole('menuitemradio',{name:'Personal notes'})).toBeFocused();
+  await page.keyboard.press('ArrowDown'); await expect(page.getByRole('menuitemradio',{name:'Work notes'})).toBeFocused();
+  await page.keyboard.press('Home'); await page.keyboard.press('Enter');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  const back=aside.getByRole('button',{name:/^Notebook: Personal notes, 1 note\./});
+  await expect(back).toBeFocused(); await expect(page.locator('.note-list .note')).toHaveCount(1);
+  await page.keyboard.press(' '); await expect(page.getByRole('menu')).toBeVisible();
+  await page.mouse.click(700,400); await expect(page.getByRole('menu')).toHaveCount(0);
+});
+
+test('the notebook heading works in a narrow panel and with a long notebook name', async ({page}) => {
+  await page.setViewportSize({width:320,height:700}); await page.goto('/');
+  await page.evaluate(()=>{ const trigger=document.querySelector('#notes-library .notebook-name') as HTMLElement; trigger.textContent='A very long notebook name that must not push the sidebar sideways'; });
+  const heading=page.locator('#notes-library');
+  await expect(heading).toBeVisible();
+  const geometry=await page.evaluate(()=>{ const heading=document.querySelector('.list-heading')!.getBoundingClientRect(); const actions=document.querySelector('.list-heading-actions')!.getBoundingClientRect(); const trigger=document.querySelector('#notes-library')!.getBoundingClientRect(); return {headingRight:heading.right,actionsLeft:actions.left,triggerRight:trigger.right,scroll:document.documentElement.scrollWidth}; });
+  expect(geometry.triggerRight).toBeLessThanOrEqual(geometry.actionsLeft+1); expect(geometry.scroll).toBeLessThanOrEqual(320);
+  await heading.click();
+  const menu=page.getByRole('menu',{name:'Notebooks'}); await expect(menu).toBeVisible();
+  const frame=await menu.boundingBox(); expect(frame!.x).toBeGreaterThanOrEqual(0); expect(frame!.x+frame!.width).toBeLessThanOrEqual(320);
+  await page.getByRole('menuitemradio',{name:'Work notes'}).click();
+  await expect(page.getByRole('button',{name:'Show notebooks',exact:true})).toBeVisible();
+  // The two-pane editor still opens on a narrow panel after switching back.
+  await heading.click(); await page.getByRole('menuitemradio',{name:'Personal notes'}).click();
+  await page.getByRole('button',{name:/Small things worth keeping.*Markdown/}).click(); await page.getByRole('button',{name:'Edit Markdown',exact:true}).click();
+  await expect(page.getByRole('textbox',{name:'Note Markdown'})).toBeVisible();
 });
