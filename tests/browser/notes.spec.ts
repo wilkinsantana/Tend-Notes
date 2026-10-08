@@ -539,3 +539,27 @@ test('panel transparency changes canvas and sidebar without fading text or dialo
   expect(await backgroundAlpha('aside')).toBe(255);
   await expect(editor).toHaveValue('Keep this draft while changing the panel background.');
 });
+
+test('reopens the notebook chosen before a reload, as after a Tend update', async ({page}) => {
+  await page.goto('/');
+  await expect(page.getByRole('button',{name:/Small things worth keeping.*Markdown/})).toBeVisible();
+  await page.getByLabel('Notebook',{exact:true}).selectOption('work');
+  await expect(page.getByText('“Work notes” has no notes yet. Your other notebooks are in the menu above.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Notebook',{exact:true})).toHaveValue('work');
+  await page.getByLabel('Notebook',{exact:true}).selectOption('personal');
+  await page.reload();
+  await expect(page.getByLabel('Notebook',{exact:true})).toHaveValue('personal');
+  await expect(page.getByRole('button',{name:/Small things worth keeping.*Markdown/})).toBeVisible();
+});
+
+test('an unreachable Tend shows reconnecting, never an empty notebook, and recovers by itself', async ({page}) => {
+  await page.goto('/?unreachable');
+  await expect(page.getByRole('heading',{name:'Reconnecting to your notes…'})).toBeVisible();
+  await expect(page.getByText('Make room for an idea.')).toHaveCount(0);
+  await expect(page.getByText('Your next idea starts here.')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Set up your notebook'})).toHaveCount(0);
+  await page.evaluate(()=>{(window as any).notesDemo.unreachable=false;});
+  await expect(page.getByRole('button',{name:/Small things worth keeping.*Markdown/})).toBeVisible({timeout:8000});
+  await expect(page.getByRole('heading',{name:'Reconnecting to your notes…'})).toHaveCount(0);
+});

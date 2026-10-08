@@ -9,7 +9,7 @@ const renamedLibraries = new Map<string,string>();
 const attachments = new Map<string,Blob>();
 const extraLibraries: Array<{id: string; name: string; canCreate: boolean}> = [];
 const extraDestinations: Array<{id: string; name: string; provider: string}> = [];
-const state = { readDelay: 0, saveDelay: 0, saveFails: false, backupFixture: false, trashLoseResponse: false, trashBeforeSend: false, todayCreateConflict: false, todayCreateLostResponse: false, todayCreateCalls: 0 };
+const state = { unreachable: new URLSearchParams(location.search).has('unreachable'), readDelay: 0, saveDelay: 0, saveFails: false, backupFixture: false, trashLoseResponse: false, trashBeforeSend: false, todayCreateConflict: false, todayCreateLostResponse: false, todayCreateCalls: 0 };
 let demoBackups: BackupState = {schedule:{destination_source_id:'',interval_minutes:0,next_run_at:null},jobs:[]};
 Object.assign(window, { notesDemo: state });
 const revision = async (content: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content)))].map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -33,7 +33,7 @@ const host: Host = { id:'host.tend.notes',user:{id:'demo-user',name:'You',role:'
     async cancel(id){const job=demoBackups.jobs.find(j=>j.id===id);if(!job)throw new Error('Export not found');return job;},
     downloadUrl(){return 'data:application/zip;base64,UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==';},
   },
-  async libraries(){return [...(new URLSearchParams(location.search).has('empty') ? [] : [{id:'personal',name:'Personal notes',canCreate:!new URLSearchParams(location.search).has('unconnected')},{id:'work',name:'Work notes',canCreate:!new URLSearchParams(location.search).has('unconnected')}]),...extraLibraries].map(l=>({...l,name:renamedLibraries.get(l.id)??l.name}));},
+  async libraries(){if(state.unreachable)throw new Error('Bad Gateway');return [...(new URLSearchParams(location.search).has('empty') ? [] : [{id:'personal',name:'Personal notes',canCreate:!new URLSearchParams(location.search).has('unconnected')},{id:'work',name:'Work notes',canCreate:!new URLSearchParams(location.search).has('unconnected')}]),...extraLibraries].map(l=>({...l,name:renamedLibraries.get(l.id)??l.name}));},
   async index(){return {indexed:0,skipped:0,more:false};},
   async list(libraryId,query='',offset=0,filters={}){
     const library=get().filter(d=>d.libraryId===libraryId).map(d=>({...d,...unpack(d.content).organization}));

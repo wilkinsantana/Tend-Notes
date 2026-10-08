@@ -39,6 +39,7 @@
   import { markdownToSpeech } from './speechText';
   import { createSpeechPlayback } from './speechPlayback';
   import { SpeechReplay, speechReplayParagraphs } from './speechReplay';
+  import { chooseNotebook, emptyListMessage, rememberNotebook, savedNotebook } from './notebookChoice';
   const speechReplay = new SpeechReplay();
   let replayNoteId: string | null = null;
   let previewContainer = $state<HTMLDivElement>();
@@ -231,6 +232,17 @@
   let nextOffset = $state<number | null>(null);
   let loading = $state(true);
   let listLoading = $state(false);
+  // A list is only "empty" after it loaded. Until then, or after a failure,
+  // Notes says it is opening or reconnecting: an update restarts Tend, and an
+  // empty list then reads as "every note is gone".
+  let listLoaded = $state(false);
+  let listFailed = $state(false);
+  let librariesLoaded = $state(false);
+  let startFailed = $state(false);
+  let starting = false;
+  let preferenceStorage: Storage | undefined;
+  const notesUnreachable = $derived(!listLoaded && (startFailed || listFailed));
+  $effect(() => { if (librariesLoaded && libraryId) rememberNotebook(preferenceStorage, host.user?.id, libraryId); });
   let opening = $state(false);
   let error = $state('');
   let view = $state<View | null>(null);
@@ -686,7 +698,8 @@
       notes = append ? [...notes, ...result.items] : result.items;
       nextOffset = result.nextOffset;
       if (result.facets) facets = result.facets;
-    } catch (e) { if (ticket === sequence) error = message(e); }
+      listLoaded = true; listFailed = false;
+    } catch (e) { if (ticket === sequence) { error = message(e); listFailed = true; } }
     finally { if (ticket === sequence) listLoading = false; }
   }
   async function buildSearch(id: string) {
@@ -703,10 +716,33 @@
     } catch { indexError = 'Search indexing paused. Refresh to try again.'; }
     finally { indexing = false; if (alive && libraryId && libraryId !== id) void buildSearch(libraryId); }
   }
+  // start opens the notebook the person last chose (see notebookChoice.ts).
+  // On failure it leaves librariesLoaded false; refresh() retries every few
+  // seconds, so Notes recovers by itself once Tend is back from an update.
+  async function start() {
+    const documents = host.documents;
+    if (starting || !documents) return;
+    starting = true;
+    try {
+      const found = await documents.libraries();
+      const chosen = await chooseNotebook(found, savedNotebook(preferenceStorage, host.user?.id), async id => {
+        const page = await documents.list(id, '', 0, { sort: 'recent' });
+        return page.facets?.total ?? page.total ?? page.items.length;
+      });
+      if (!alive) return;
+      libraries = found; libraryId = chosen; librariesLoaded = true;
+      if (startFailed) { startFailed = false; error = ''; }
+      if (chosen) await loadList(); else listLoaded = true;
+      void buildSearch(libraryId);
+    } catch (e) { if (alive) { startFailed = true; error = message(e); } }
+    finally { starting = false; loading = false; }
+  }
+  function retryNotes() { error = ''; if (!librariesLoaded) void start(); else void loadList(); }
   async function refresh() {
     if (trashOpen || todoOpen || syncing || document.visibilityState !== 'visible' || opening || creating || deleting || templatesOpen || createOpen || deleteOpen || reloadOpen || renameOpen || actionBusy || mediaKind || formulaSelection || linkDialog || dictationOpen || speechSettingsOpen) return;
     syncing = true;
     try {
+      if (!librariesLoaded) { await start(); return; }
       if (notes.length <= 100) await loadList();
       const current = session;
       const revision = current?.view.document.revision;
@@ -727,7 +763,7 @@
       if (!alive || !selected) return;
       // Setup may stay open while the current save completes. Recheck before switching.
       if (!(await ensureSaved())) return;
-      libraries = await host.documents.libraries();
+      libraries = await host.documents.libraries(); librariesLoaded = true; startFailed = false;
       session?.abandon(); session = null; view = null;
       libraryId = selected.id; query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false;
       await loadList(); void buildSearch(libraryId);
@@ -886,7 +922,7 @@
     try {
       if (!(await ensureSaved())) return;
       session?.abandon(); session = null; view = null; mobileEditor = false;
-      libraryId = id; query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; notes = []; await loadList(); void buildSearch(id);
+      libraryId = id; query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; notes = []; listLoaded = false; listFailed = false; await loadList(); void buildSearch(id);
     } finally { opening = false; }
   }
   function selectLibrary(event: Event) {
@@ -1332,12 +1368,9 @@
     let storage: Storage;
     try { storage = localStorage; } catch { storage = { get length(){return 0;}, clear(){}, key(){return null;}, getItem(){return null;}, removeItem(){}, setItem(){throw new Error('Recovery storage unavailable');} }; }
     drafts = new Drafts(storage, host.user!.id, client);
+    preferenceStorage = storage;
     refreshDrafts();
-    void (async () => {
-      try { libraries = await host.documents!.libraries(); libraryId = libraries[0]?.id ?? ''; await loadList(); }
-      catch (e) { error = message(e); }
-      finally { loading = false; void buildSearch(libraryId); }
-    })();
+    void start();
     refreshTimer = setInterval(() => void refresh(), 3000);
     window.addEventListener('beforeunload', leave);
   });
@@ -1346,7 +1379,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- Keyboard shortcuts belong to this extension's focused panel. -->
-<div class="notes-app" data-shortcut-scope use:selectionFocus class:sidebar-hidden={!sidebar || focusMode || todoOpen || trashOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="Tend Notes" tabindex="-1">
+<div class="notes-app" data-shortcut-scope use:selectionFocus class:sidebar-hidden={!sidebar || focusMode || todoOpen || trashOpen} class:focus-mode={focusMode} class:mobile-editor={mobileEditor || (!loading && ready && librariesLoaded && !libraries.length)} onkeydown={shortcuts} role="region" aria-label="Tend Notes" tabindex="-1">
   {#if !ready}
     <div class="welcome"><BookOpen size={44}/><h1>Tend Notes</h1><p>Update Tend to use your new notes space.</p><p class="muted">This extension needs Tend’s Documents editing support.</p></div>
   {:else if loading}
@@ -1400,7 +1433,7 @@
             {#if note.tags?.length}<span class="note-tags">{note.tags.map(tag => '#' + tag).join('  ')}</span>{/if}
           </div>
         {:else}
-          <div class="list-empty"><FileText size={22}/><p>{query ? 'No matching notes.' : 'Your next idea starts here.'}</p></div>
+          <div class="list-empty" role="status"><FileText size={22}/><p>{emptyListMessage({ loaded: listLoaded, failed: notesUnreachable, query, notebookName: selectedLibrary?.name, notebookCount: libraries.length })}</p>{#if notesUnreachable}<button class="quiet" onclick={retryNotes}>Try again</button>{/if}</div>
         {/each}
         {#if nextOffset !== null}<button class="quiet more" onclick={() => void loadList(true)} disabled={listLoading}>Load more notes</button>{/if}
       </div>
@@ -1472,7 +1505,7 @@
         {#if readPhase !== 'idle' || readError}<ReadAloudControls onusedownloaded={deviceReadingUnavailable && !checkingDeviceVoices ? useDownloadedReading : undefined} phase={readPhase} scope={readScope} progress={readProgress} error={readError} follow={followReading} onfollowchange={value => followReading = value} onpause={pauseReadAloud} onresume={resumeReadAloud} onstop={() => { readError = ''; stopReadAloud(); }}/>{/if}
         <footer><span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span><button class="save-status" onclick={() => void save()} disabled={view.saving || !view.dirty || view.conflict}>{#if view.saving}<LoaderCircle size={13} class="spin"/> Saving…{:else if view.dirty}<span class="unsaved-dot"></span>{view.error ? 'Not saved' : 'Save now'}{:else}<Check size={14}/> All changes saved{/if}</button></footer>
       {:else}
-        <div class="welcome"><span class="welcome-icon"><BookOpen size={37} strokeWidth={1.4}/></span><span class="eyebrow">YOUR OWN QUIET CORNER</span>{#if !libraries.length}<h1>Make room for an idea.</h1><p>Tend prepares a protected home for your notes on your server. Start writing, then choose a backup destination whenever you’re ready.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}><FolderOpen size={17}/> Set up your notebook</button>{:else if hasLoadedNotes}<h1>Pick up where you left off.</h1><p>Return to a recent note, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => void continueWriting()}><PenLine size={17}/> Continue writing</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if facets.total > 0}<h1>No notes match these filters.</h1><p>Clear the filters to continue writing, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => { query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; void loadList(); }}>Clear filters</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if !selectedLibrary?.canCreate}<h1>Make room for an idea.</h1><p>Choose a connected notebook or let Tend prepare a new one to start writing.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}>Set up your notebook</button>{:else}<h1>Make room for an idea.</h1><p>A quick thought. A plan taking shape. Something worth remembering.<br/>Keep it here, in your own words.</p><button class="primary" onclick={() => beginCreate()}><Plus size={17}/> Write your first note</button><button class="quiet" onclick={() => filePicker?.click()}><Upload size={14}/> Bring a Markdown file</button>{/if}<small>Simple to write. Easy to take with you.</small></div>
+        <div class="welcome"><span class="welcome-icon"><BookOpen size={37} strokeWidth={1.4}/></span><span class="eyebrow">YOUR OWN QUIET CORNER</span>{#if notesUnreachable}<h1>Reconnecting to your notes…</h1><p>Tend can’t reach your notes right now. They are still saved on your server, and Notes keeps trying.</p><button class="primary" onclick={retryNotes}>Try again</button>{:else if !librariesLoaded || !listLoaded}<h1>Opening your notes…</h1>{:else if !libraries.length}<h1>Make room for an idea.</h1><p>Tend prepares a protected home for your notes on your server. Start writing, then choose a backup destination whenever you’re ready.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}><FolderOpen size={17}/> Set up your notebook</button>{:else if hasLoadedNotes}<h1>Pick up where you left off.</h1><p>Return to a recent note, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => void continueWriting()}><PenLine size={17}/> Continue writing</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if facets.total > 0}<h1>No notes match these filters.</h1><p>Clear the filters to continue writing, or capture a new thought without naming it first.</p><button class="primary" disabled={opening} onclick={() => { query = ''; tagFilter = ''; colorFilter = ''; pinnedFilter = false; void loadList(); }}>Clear filters</button>{#if selectedLibrary?.canCreate}<button class="quiet" disabled={opening} onclick={() => void quickCapture()}><Zap size={14}/> Quick capture</button>{/if}{:else if !selectedLibrary?.canCreate}<h1>Make room for an idea.</h1><p>Choose a connected notebook or let Tend prepare a new one to start writing.</p><button class="primary" disabled={opening} onclick={() => void setupNotebook()}>Set up your notebook</button>{:else}<h1>Make room for an idea.</h1><p>A quick thought. A plan taking shape. Something worth remembering.<br/>Keep it here, in your own words.</p><button class="primary" onclick={() => beginCreate()}><Plus size={17}/> Write your first note</button><button class="quiet" onclick={() => filePicker?.click()}><Upload size={14}/> Bring a Markdown file</button>{/if}<small>Simple to write. Easy to take with you.</small></div>
       {/if}
       {/if}
     </main>
